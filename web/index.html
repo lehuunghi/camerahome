@@ -4,27 +4,30 @@
 <title>CameraHome</title>
 <style>
 :root{color-scheme:dark;--ink:#eef4fa;--muted:#a5b7c9;--panel:#142031;--line:#2c3e53;--mint:#76e8bd}*{box-sizing:border-box}body{margin:0;background:#0b1420;color:var(--ink);font:16px system-ui,sans-serif}header{border-bottom:1px solid var(--line);background:#101b29}header div,main{max-width:1240px;margin:auto;padding:22px 28px}header strong{color:var(--mint);font-size:22px}main{padding-top:34px}h1{margin:0;font-size:clamp(2rem,4vw,3rem);letter-spacing:-.04em}h2{font-size:1.25rem;margin:0 0 14px}.bar,.title,.card>div,.filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.title,.card>div{justify-content:space-between}.sub{color:var(--muted);margin:8px 0 20px}.bar{color:var(--muted);margin:0 0 26px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,265px),1fr));gap:16px}.card,section.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}.card img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#233246;color:var(--muted)}.card>div{padding:14px}.online{color:var(--mint)}.panel{padding:20px;margin-top:26px}button,input,select{font:inherit;padding:8px 12px;border-radius:8px;color:var(--ink);background:#1d3045;border:1px solid #3c5269}button{cursor:pointer}button:hover{border-color:var(--mint)}.filters{margin-bottom:14px}video{width:min(100%,760px);display:block;margin:10px 0;max-height:430px}video[hidden]{display:none}ul{list-style:none;padding:0;margin:0;max-height:380px;overflow:auto}li{padding:7px 0;border-bottom:1px solid var(--line)}li button{width:100%;text-align:left}#backup{white-space:pre-wrap}
-nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted);text-decoration:none}nav a:hover{color:var(--mint)}form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;align-items:end}form label{display:grid;gap:6px}form input{width:100%;min-width:0}.accent{background:var(--mint);color:#10241f;font-weight:700;border-color:transparent}.notice{color:var(--muted);line-height:1.5}code{overflow-wrap:anywhere}section{scroll-margin-top:16px}
+nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted);text-decoration:none}nav a:hover{color:var(--mint)}form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;align-items:end}form label{display:grid;gap:6px}form input{width:100%;min-width:0}.accent{background:var(--mint);color:#10241f;font-weight:700;border-color:transparent}.notice{color:var(--muted);line-height:1.5}code{overflow-wrap:anywhere}section{scroll-margin-top:16px}.camera-preview{display:block;width:100%;border:0;border-radius:0;padding:0}.actions{display:flex;gap:8px;flex-wrap:wrap;padding:0 14px 14px}.actions button{flex:1}.check{display:flex;align-items:center;gap:8px}.check input{width:auto}.layout{display:grid;gap:20px}@media(min-width:980px){.layout{grid-template-columns:1fr 1fr}.layout video{margin-left:auto;margin-right:auto}}.layout .panel{min-width:0}.panel video{background:#0b1420}.card .actions{justify-content:start}
 </style></head>
 <body><header><div><strong>CameraHome</strong><nav><a href="#cameras">Camera</a><a href="#add">Thêm camera</a><a href="#recordings">Bản ghi</a><a href="#drive">Google Drive</a></nav></div></header><main>
 <div class="title"><h1>Camera nhà bạn</h1><button id="refresh">Làm mới</button></div>
 <p class="sub">Camera, bản ghi chuyển động và Google Drive</p>
 <p id="connection" class="bar" role="status">Đang lấy trạng thái Frigate…</p>
 <div id="cameras" class="grid"></div>
-<section class="panel" id="live" hidden><div class="title"><h2 id="live-title">Xem trực tiếp</h2><button id="stop-live">Đóng luồng</button></div><video id="live-video" controls muted autoplay playsinline></video><p id="live-state" role="status"></p></section>
-<section class="panel" id="add"><h2>Thêm camera Tapo</h2><p class="notice">Camera cần ở mạng 192.168.88.x và hỗ trợ RTSP. Dùng Camera Account được tạo trong cài đặt nâng cao của app Tapo.</p>
+<div class="layout"><section class="panel" id="live" hidden><div class="title"><h2 id="live-title">Xem trực tiếp</h2><button id="stop-live">Đóng luồng</button></div><video id="live-video" controls muted autoplay playsinline></video><p id="live-state" role="status"></p></section>
+<section class="panel" id="recordings"><h2 id="recordings-title">Bản ghi</h2><div class="filters"><label>Ngày UTC <input id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div><video id="player" controls playsinline hidden></video><p id="results" role="status"></p><ul id="clips"></ul></section></div>
+<section class="panel" id="add"><h2>Quản trị camera</h2><h3>Thêm camera Tapo</h3><p class="notice">Camera cần ở mạng 192.168.88.x và hỗ trợ RTSP. Dùng Camera Account được tạo trong cài đặt nâng cao của app Tapo.</p>
 <form id="camera-form">
 <label>Mã camera <input name="id" placeholder="tapo_88_9" pattern="[A-Za-z0-9_\-]{1,48}" required maxlength="48"></label>
 <label>IP camera <input name="ip" placeholder="192.168.88.9" required inputmode="decimal" maxlength="15"></label>
 <label>Tên Camera Account <input name="username" required maxlength="128" autocomplete="off"></label>
 <label>Mật khẩu Camera Account <input name="password" type="password" required maxlength="128" autocomplete="new-password"></label>
-<button class="accent" type="submit">Thêm camera</button>
+<label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label><label class="check"><input name="compact" type="checkbox" checked> Bản ghi nhẹ (luồng phụ)</label><button class="accent" type="submit">Thêm camera</button>
 </form><p id="camera-result" role="status"></p></section>
-<section class="panel" id="recordings"><h2>Bản ghi chuyển động</h2><div class="filters">
-<label>Ngày UTC <input id="day" type="date"></label>
-<label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
-<video id="player" controls playsinline hidden></video>
-<p id="results" role="status"></p><ul id="clips"></ul></section>
+<section class="panel" id="camera-settings" hidden><h2 id="settings-title">Cài đặt camera</h2>
+<form id="settings-form">
+<label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label>
+<label class="check"><input name="compact" type="checkbox"> Bản ghi nhẹ (luồng phụ)</label>
+<button class="accent" type="submit">Lưu thay đổi</button>
+</form><p class="notice">Tiếng khóc cần camera có micro. Chế độ kết hợp có thể giữ cả đoạn có âm thanh lớn khác. Bản ghi nhẹ dùng luồng phụ; live vẫn dùng luồng chính.</p>
+<p id="settings-result" role="status"></p></section>
 <section class="panel" id="drive"><h2>Google Drive</h2><p id="backup" role="status">Đang kiểm tra…</p>
 <p class="notice">Trong Google Cloud, bật Drive API và tạo OAuth client loại Web application. Thêm URL chuyển hướng: <code id="callback-url"></code>. Nếu ứng dụng đang ở chế độ thử nghiệm, thêm tài khoản Google của bạn vào danh sách người dùng thử.</p>
 <form id="drive-form">
@@ -38,6 +41,7 @@ const el = id => document.getElementById(id);
 const day = el('day'), filter = el('filter'), player = el('player');
 day.value = new Date().toISOString().slice(0,10);
 let requestId = 0;
+let autoLive = true;
 async function read(path, type = 'json') {
   const response = await fetch(path, {cache:'no-store'});
   if (!response.ok) throw new Error(String(response.status));
@@ -50,6 +54,7 @@ async function cameras() {
     filter.replaceChildren(new Option('Tất cả',''), ...list.map(item => new Option(item.id,item.id)));
     filter.value = list.some(item => item.id === selected) ? selected : '';
     el('connection').textContent = list.filter(item => item.fps > 0).length + '/' + list.length + ' camera đang nhận hình';
+    if (!list.length) el('connection').textContent = 'Chưa có camera. Mở Quản trị camera để thêm camera Tapo.';
     el('cameras').replaceChildren(...list.map(item => {
       const card = document.createElement('article'); card.className = 'card';
       const image = document.createElement('img'); image.alt = 'Ảnh mới nhất của ' + item.id;
@@ -58,11 +63,16 @@ async function cameras() {
       const title = document.createElement('strong'); title.textContent = item.id;
       const status = document.createElement('span'); status.textContent = item.fps > 0 ? 'Đang nhận hình' : 'Chưa có hình';
       if (item.fps > 0) status.className = 'online';
-      const open = document.createElement('button');
-      open.textContent = 'Xem trực tiếp';
-      open.onclick = () => startLive(item.id);
-      row.append(title,status,open); card.append(image,row); return card;
+      const preview = document.createElement('button'); preview.className = 'camera-preview';
+      preview.setAttribute('aria-label','Mở camera ' + item.id);
+      preview.append(image); preview.onclick = () => openCamera(item.id,false);
+      const actions = document.createElement('div'); actions.className = 'actions';
+      for (const [label,run] of [['Trực tiếp',() => openCamera(item.id,false)],['Xem lại',() => openCamera(item.id,true)],['Cài đặt',() => openSettings(item.id)]]) {
+        const button = document.createElement('button'); button.textContent = label; button.onclick = run; actions.append(button);
+      }
+      row.append(title,status); card.append(preview,row,actions); return card;
     }));
+    return list;
   } catch {
     el('connection').textContent = 'Không kết nối được với Frigate.';
     el('cameras').replaceChildren();
@@ -75,20 +85,79 @@ async function clips() {
   try {
     const list = await read('/api/clips?' + query);
     if (current !== requestId) return;
-    el('results').textContent = list.length ? list.length + ' đoạn gần nhất' : 'Không có bản ghi trong ngày này.';
-    el('clips').replaceChildren(...list.map(path => {
-      const item = document.createElement('li'), button = document.createElement('button');
-      const [,hour,camera,file] = path.split('/');
-      button.textContent = camera + ' · ' + hour + ':' + file.slice(0,5).replace('.',':') + ' UTC';
-      button.onclick = () => {player.src = '/media/' + path.split('/').map(encodeURIComponent).join('/'); player.hidden = false; player.play().catch(() => {});};
-      item.append(button); return item;
-    }));
+    showClips(list);
   } catch {
     if (current !== requestId) return;
     el('clips').replaceChildren();
     el('results').textContent = 'Không tải được danh sách bản ghi.';
   }
 }
+function playClip(path) {
+  player.src = '/media/' + path.split('/').map(encodeURIComponent).join('/');
+  player.hidden = false;
+  player.play().catch(() => {});
+}
+function showClips(list) {
+  el('results').textContent = list.length ? list.length + ' đoạn gần nhất' : 'Chưa có bản ghi.';
+  el('clips').replaceChildren(...list.map(path => {
+    const item = document.createElement('li'), button = document.createElement('button');
+    const [,hour,camera,file] = path.split('/');
+    button.textContent = camera + ' · ' + hour + ':' + file.slice(0,5).replace('.',':') + ' UTC';
+    button.onclick = () => playClip(path);
+    item.append(button); return item;
+  }));
+}
+async function openCamera(id,replay) {
+  autoLive = false;
+  filter.value = id;
+  el('recordings-title').textContent = 'Bản ghi · ' + id;
+  player.pause(); player.removeAttribute('src'); player.load(); player.hidden = true;
+  if (replay) {stopStream(); el('recordings').scrollIntoView({block:'start'});}
+  else startLive(id);
+  const current = ++requestId;
+  el('results').textContent = 'Đang tìm bản ghi gần nhất…';
+  el('clips').replaceChildren();
+  try {
+    const result = await read('/api/clips/latest/' + encodeURIComponent(id));
+    if (current !== requestId) return;
+    if (result.day) day.value = result.day;
+    showClips(result.clips);
+    if (replay && result.clips.length) playClip(result.clips[0]);
+  } catch {
+    if (current === requestId) el('results').textContent = 'Không tải được danh sách bản ghi.';
+  }
+}
+let managing = '';
+async function openSettings(id) {
+  managing = id;
+  el('camera-settings').hidden = false;
+  el('settings-title').textContent = 'Cài đặt · ' + id;
+  el('camera-settings').scrollIntoView({block:'start'});
+  const form = el('settings-form'), button = form.querySelector('button');
+  button.disabled = true;
+  el('settings-result').textContent = 'Đang tải cấu hình…';
+  try {
+    const settings = await read('/api/cameras/' + encodeURIComponent(id) + '/settings');
+    if (id !== managing) return;
+    form.elements.mode.value = settings.mode;
+    form.elements.compact.checked = settings.compact;
+    el('settings-result').textContent = '';
+    button.disabled = false;
+  } catch {
+    if (id === managing) el('settings-result').textContent = 'Không đọc được cấu hình camera.';
+  }
+}
+el('settings-form').onsubmit = async event => {
+  event.preventDefault();
+  const form = event.currentTarget, id = managing, button = form.querySelector('button');
+  button.disabled = true;
+  try {
+    await submit(form,'/api/cameras/' + encodeURIComponent(id) + '/settings');
+    if (managing === id) el('settings-result').textContent = 'Đã lưu. Frigate sẽ nạp lại cấu hình.';
+  } catch(error) {if (managing === id) el('settings-result').textContent = error.message;}
+  finally {if (managing === id) button.disabled = false;}
+};
+
 async function backup() {
   try {
     const result = await read('/api/drive');
@@ -98,8 +167,9 @@ async function backup() {
   } catch {el('backup').textContent = 'Không đọc được trạng thái sao lưu.';}
 }
 async function submit(form, endpoint) {
-  const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(Object.fromEntries(new FormData(form)))});
+  const body = Object.fromEntries(new FormData(form));
+  if (form.elements.compact) body.compact = form.elements.compact.checked;
+  const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   if (!response.ok) throw new Error((await response.text()).slice(0, 300) || 'Yêu cầu thất bại.');
   return response;
 }
@@ -142,7 +212,7 @@ function startLive(id) {
   panel.hidden = false; el('live-title').textContent = id + ' · Trực tiếp';
   panel.scrollIntoView({block:'nearest'});
   status.textContent = 'Đang kết nối…';
-  if (!window.MediaSource) {status.textContent = 'Trình duyệt này chưa hỗ trợ phát trực tiếp. Hãy thử Chrome hoặc Edge.'; return;}
+  if (!window.MediaSource) {stopStream = () => {panel.hidden = true;}; status.textContent = 'Trình duyệt này chưa hỗ trợ phát trực tiếp. Hãy thử Chrome hoặc Edge.'; return;}
   const source = new MediaSource(), objectUrl = URL.createObjectURL(source);
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/live/' + encodeURIComponent(id));
   ws.binaryType = 'arraybuffer';
@@ -172,7 +242,7 @@ function startLive(id) {
   video.src = objectUrl;
   ws.onmessage = event => {
     if (typeof event.data === 'string') {
-      const message = JSON.parse(event.data);
+      let message; try {message = JSON.parse(event.data);} catch {return;}
       if (message.type === 'error') {fail('Chưa mở được luồng. Kiểm tra RTSP và Camera Account.'); return;}
       if (message.type === 'mse') {codec = message.value; initialize();}
     } else if (queue.length < 80) {queue.push(event.data); push();}
@@ -186,7 +256,13 @@ function startLive(id) {
   };
 }
 el('stop-live').onclick = () => stopStream();
-async function refresh() {await Promise.all([cameras().then(clips),backup()]);}
-day.onchange = clips; filter.onchange = clips; el('refresh').onclick = refresh;
+async function refresh() {
+  await Promise.all([cameras().then(list => {
+    const first = autoLive && list?.find(item => item.fps > 0);
+    if (first) {autoLive = false; return openCamera(first.id,false);}
+    return clips();
+  }),backup()]);
+}
+day.onchange = clips; filter.onchange = () => {el('recordings-title').textContent = filter.value ? 'Bản ghi · ' + filter.value : 'Bản ghi'; clips();}; el('refresh').onclick = refresh;
 refresh(); setInterval(refresh,30000);
 </script></body></html>

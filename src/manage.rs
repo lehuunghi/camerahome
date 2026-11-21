@@ -35,6 +35,7 @@ pub fn routes() -> Router<App> {
     Router::new()
         .route("/api/cameras", post(add_camera))
         .route("/api/live/{id}", get(live))
+        .route("/api/cameras/{id}/settings", get(camera_settings).post(change_camera_settings))
         .route("/api/drive", get(drive_status).post(start_drive))
         .route("/drive/callback", get(finish_drive))
 }
@@ -45,58 +46,138 @@ struct CameraInput {
     ip: Ipv4Addr,
     username: String,
     password: String,
+    #[serde(flatten)]
+    settings: CameraSettings,
 }
 
 async fn add_camera(State(app): State<App>, headers: HeaderMap, Json(input): Json<CameraInput>) -> Result<StatusCode, Problem> {
     require_origin(&headers)?;
     let subnet = env::var("CAMERA_SUBNET").unwrap_or_else(|_| "192.168.88".into());
     let address = input.ip.octets();
-    if !camera_id(&input.id) || input.id.len() > 48 || format!("{}.{}.{}", address[0], address[1], address[2]) != subnet
+    if !camera_id(&input.id) || input.id.len() > 48 || input.id.ends_with("__compact") || format!("{}.{}.{}", address[0], address[1], address[2]) != subnet
         || !(1..255).contains(&address[3]) || input.username.is_empty() || input.password.is_empty()
         || input.username.len() > 128 || input.password.len() > 128 {
         return Err(problem(StatusCode::BAD_REQUEST, "Kiểm tra mã camera, IP trong mạng camera và Camera Account."));
     }
     let _guard = app.management.lock().await;
-    let raw = fs::read("/frigate-config/config.yml").await.map_err(|_| internal())?;
-    let mut config: Value = serde_yaml::from_slice(&raw).map_err(|_| internal())?;
-    let root = config.as_object_mut().ok_or_else(internal)?;
+    let mut config = read_config().await?;
     let url = format!("rtsp://{}:{}@{}:554/stream1", encode(&input.username), encode(&input.password), input.ip);
-    let camera = root.entry("cameras").or_insert_with(|| json!({})).as_object_mut().ok_or_else(internal)?;
-    if camera.contains_key(&input.id) {
+    let cameras = object_at(&mut config, "cameras")?;
+    if cameras.contains_key(&input.id) {
         return Err(problem(StatusCode::CONFLICT, "Mã camera đã tồn tại."));
     }
-    let relay = format!("rtsp://127.0.0.1:8554/{}", input.id);
-    camera.insert(input.id.clone(), json!({
-        "ffmpeg": {"inputs": [{"path": relay, "input_args": "preset-rtsp-restream", "roles": ["detect", "record"]}]}
-    }));
-    let streams = root.entry("go2rtc").or_insert_with(|| json!({})).as_object_mut().ok_or_else(internal)?
-        .entry("streams").or_insert_with(|| json!({})).as_object_mut().ok_or_else(internal)?;
-    if streams.contains_key(&input.id) {
-        return Err(problem(StatusCode::CONFLICT, "Mã luồng trực tiếp đã tồn tại."));
+    cameras.insert(input.id.clone(), json!({}));
+    update_settings(&mut config, &input.id, &url, input.settings)?;
+    save_config(&app, &config).await?;
+    Ok(StatusCode::CREATED)
+}
+
+#[derive(Deserialize)]
+struct CameraSettings {
+    mode: RecordingMode,
+    compact: bool,
+}
+
+#[derive(Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum RecordingMode { Motion, Crying, Both }
+
+async fn read_config() -> Result<Value, Problem> {
+    let raw = fs::read("/frigate-config/config.yml").await.map_err(|_| internal())?;
+    serde_yaml::from_slice(&raw).map_err(|_| internal())
+}
+
+fn object_at<'a>(value: &'a mut Value, name: &str) -> Result<&'a mut serde_json::Map<String, Value>, Problem> {
+    value.as_object_mut().ok_or_else(internal)?.entry(name).or_insert_with(|| json!({}))
+        .as_object_mut().ok_or_else(internal)
+}
+
+fn camera_source<'a>(config: &'a Value, id: &str) -> Option<&'a str> {
+    config["cameras"].get(id)?;
+    let stream = &config["go2rtc"]["streams"][id];
+    let source = stream.as_str().or_else(|| stream[0].as_str())
+        .or_else(|| config["cameras"][id]["ffmpeg"]["inputs"][0]["path"].as_str())?;
+    (source.starts_with("rtsp://") && source.split(['?', '#']).next()?.ends_with("/stream1")).then_some(source)
+}
+
+fn update_settings(config: &mut Value, id: &str, url: &str, settings: CameraSettings) -> Result<(), Problem> {
+    let cry = settings.mode != RecordingMode::Motion;
+    let motion = settings.mode != RecordingMode::Crying;
+    let compact_id = format!("{id}__compact");
+    let go2rtc = config.as_object_mut().ok_or_else(internal)?.entry("go2rtc").or_insert_with(|| json!({}));
+    let streams = object_at(go2rtc, "streams")?;
+    streams.insert(id.to_owned(), json!([url]));
+    if settings.compact {
+        let location = url.split(['?', '#']).next().ok_or_else(internal)?;
+        let mut substream = location.strip_suffix("/stream1").ok_or_else(internal)?.to_owned();
+        substream.push_str("/stream2");
+        substream.push_str(&url[location.len()..]);
+        streams.insert(compact_id.clone(), json!([substream]));
+    } else {
+        streams.remove(&compact_id);
     }
-    // Backfill live streams for Tapo cameras previously added through Frigate's config.
-    streams.insert(input.id, json!([url]));
-    add_existing_streams(&mut config);
-    let payload = serde_yaml::to_string(&config).map_err(|_| internal())?;
+    let feed = if settings.compact { &compact_id } else { id };
+    let main_path = format!("rtsp://127.0.0.1:8554/{id}");
+    let record_path = format!("rtsp://127.0.0.1:8554/{feed}");
+    let mut roles = vec!["detect", "record"];
+    if cry && !settings.compact { roles.push("audio"); }
+    let mut inputs = vec![json!({
+        "path": record_path, "input_args":"preset-rtsp-restream", "roles": roles
+    })];
+    if cry && settings.compact {
+        inputs.push(json!({"path":main_path,"input_args":"preset-rtsp-restream","roles":["audio"]}));
+    }
+    let camera = object_at(config, "cameras")?.get_mut(id).ok_or_else(internal)?;
+    object_at(camera, "ffmpeg")?.insert("inputs".into(), json!(inputs));
+    object_at(camera, "audio")?.insert("enabled".into(), json!(cry));
+    if cry {
+        object_at(camera, "audio")?.insert("listen".into(), json!(["crying"]));
+        let ffmpeg = camera.get_mut("ffmpeg").ok_or_else(internal)?;
+        object_at(ffmpeg, "output_args")?.insert("record".into(), json!("preset-record-generic-audio-aac"));
+        object_at(camera, "review")?.entry("alerts").or_insert_with(|| json!({}))["labels"] = json!(["crying"]);
+    }
+    let record = object_at(camera, "record")?;
+    record.insert("enabled".into(), json!(true));
+    record.insert("continuous".into(), json!({"days":0}));
+    record.insert("motion".into(), json!({"days":if motion {3} else {0}}));
+    record.insert("alerts".into(), json!({"pre_capture":5,"post_capture":10,"retain":{"days":if cry {3} else {0},"mode":"all"}}));
+    record.insert("detections".into(), json!({"retain":{"days":0,"mode":"all"}}));
+    Ok(())
+}
+
+async fn camera_settings(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>, Problem> {
+    let _guard = app.management.lock().await;
+    let config = read_config().await?;
+    if !camera_id(&id) || camera_source(&config, &id).is_none() {
+        return Err(problem(StatusCode::NOT_FOUND, "Camera này chưa có cấu hình Tapo tương thích."));
+    }
+    let camera = &config["cameras"][&id];
+    let cry = camera["audio"]["enabled"].as_bool().unwrap_or(false);
+    let mode = if !cry {"motion"} else if camera["record"]["motion"]["days"].as_f64() == Some(0.0) {"crying"} else {"both"};
+    let compact = camera["ffmpeg"]["inputs"][0]["path"].as_str().is_some_and(|path| path.ends_with("__compact"));
+    Ok(Json(json!({"mode":mode,"compact":compact})))
+}
+
+async fn change_camera_settings(State(app): State<App>, Path(id): Path<String>, headers: HeaderMap, Json(settings): Json<CameraSettings>) -> Result<StatusCode, Problem> {
+    require_origin(&headers)?;
+    let _guard = app.management.lock().await;
+    let mut config = read_config().await?;
+    let url = camera_source(&config, &id).filter(|_| camera_id(&id)).map(str::to_owned)
+        .ok_or_else(|| problem(StatusCode::NOT_FOUND, "Camera này chưa có cấu hình Tapo tương thích."))?;
+    update_settings(&mut config, &id, &url, settings)?;
+    save_config(&app, &config).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn save_config(app: &App, config: &Value) -> Result<(), Problem> {
+    let payload = serde_yaml::to_string(config).map_err(|_| internal())?;
     let response = app.client.post(format!("{}/api/config/save?save_option=restart", app.frigate))
         .timeout(Duration::from_secs(20)).header(header::CONTENT_TYPE, "text/plain").body(payload).send().await
         .map_err(|_| problem(StatusCode::BAD_GATEWAY, "Frigate chưa phản hồi. Làm mới để kiểm tra trước khi thử lại."))?;
     if !response.status().is_success() || !response.json::<Value>().await.is_ok_and(|body| body["success"].as_bool() == Some(true)) {
         return Err(problem(StatusCode::BAD_GATEWAY, "Frigate từ chối cấu hình. Camera chưa được xác nhận."));
     }
-    Ok(StatusCode::CREATED)
-}
-
-fn add_existing_streams(config: &mut Value) {
-    let direct: Vec<_> = config["cameras"].as_object().into_iter().flatten().filter_map(|(id, cam)| {
-        let path = cam["ffmpeg"]["inputs"].as_array()?.first()?["path"].as_str()?;
-        (camera_id(id) && path.starts_with("rtsp://") && !path.contains("127.0.0.1:8554")).then(|| (id.clone(), json!([path])))
-    }).collect();
-    if let Some(streams) = config["go2rtc"]["streams"].as_object_mut() {
-        for (id, url) in direct {
-            streams.entry(id).or_insert(url);
-        }
-    }
+    Ok(())
 }
 
 fn encode(value: &str) -> String {

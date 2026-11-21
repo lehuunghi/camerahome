@@ -36,3 +36,9 @@ Không đưa cấu hình RTSP thật, token rclone, dữ liệu video hoặc m�
 Bản mới có biểu mẫu thêm camera Tapo bằng IP và Camera Account, xem trực tiếp qua go2rtc/MSE, phát lại bản ghi và OAuth Google Drive. Frigate vẫn ghi clip khi có chuyển động. Cấu hình có `PUBLIC_ORIGIN` và `CAMERA_SUBNET` trong Compose. Nginx phải chuyển tiếp WebSocket cho `/api/live/` và yêu cầu đăng nhập cho mọi đường dẫn. Tắt access log cho `/drive/callback` để mã OAuth không xuất hiện trong log.
 
 Tạo Google OAuth client loại Web application, bật Drive API và thêm URL chuyển hướng `https://camera.nghi.org/drive/callback`. Cấp quyền trong giao diện CameraHome. Ứng dụng chỉ xin quyền Drive theo tệp và tạo thư mục đích bằng tài khoản được cấp quyền. Dữ liệu xác thực sao lưu ở `/opt/camerahome-data`, cần quyền thư mục 0700. Bộ hẹn giờ trong container kiểm tra clip mỗi 5 phút. Nếu đã dùng Cron cũ, tắt nó để dùng một tác vụ sao lưu.
+
+### Chế độ ghi hình
+
+Mỗi camera Tapo có thể giữ clip khi có chuyển động, khi nhận diện tiếng khóc, hoặc dùng cả hai. Ở chế độ kết hợp, Frigate cũng tính âm lượng vượt ngưỡng là chuyển động nên có thể giữ đoạn có âm thanh lớn khác. Camera cần luồng có âm thanh để nhận diện tiếng khóc. CameraHome đặt thời gian lưu trên máy chủ là ba ngày cho các loại bản ghi đã bật.
+
+Bản ghi nhẹ sử dụng RTSP stream2 do camera nén sẵn, còn phát trực tiếp sử dụng stream1. Chất lượng và bitrate phụ thuộc model cũng như cấu hình camera. Nếu stream2 không hoạt động hoặc cần ảnh rõ hơn, bỏ chọn bản ghi nhẹ.

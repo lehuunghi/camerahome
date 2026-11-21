@@ -92,14 +92,34 @@ fn clips_for_day(root: PathBuf, filter: Selection) -> std::io::Result<Vec<String
 }
 
 async fn clips(State(app): State<App>, Query(filter): Query<Selection>) -> Result<Json<Vec<String>>, StatusCode> {
-    let valid_day = filter.day.len() == 10 && filter.day.bytes().enumerate()
-        .all(|(i,c)| if i == 4 || i == 7 { c == b'-' } else { c.is_ascii_digit() });
+    let valid_day = valid_recording_day(&filter.day);
     if !valid_day || filter.camera.as_deref().is_some_and(|id| !camera_id(id)) {
         return Err(StatusCode::BAD_REQUEST);
     }
     tokio::task::spawn_blocking(move || clips_for_day(app.recordings, filter))
         .await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .map(Json).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+async fn latest_clips(State(app): State<App>, axum::extract::Path(id): axum::extract::Path<String>) -> Result<Json<Value>, StatusCode> {
+    if !camera_id(&id) { return Err(StatusCode::BAD_REQUEST); }
+    let result = tokio::task::spawn_blocking(move || -> std::io::Result<Value> {
+        let mut days = entries(&app.recordings)?;
+        days.sort_unstable_by_key(|entry| std::cmp::Reverse(entry.file_name()));
+        for entry in days.into_iter().take(31) {
+            let day = entry.file_name().to_string_lossy().into_owned();
+            if !entry.file_type()?.is_dir() || !valid_recording_day(&day) { continue; }
+            let clips = clips_for_day(app.recordings.clone(), Selection {day: day.clone(), camera: Some(id.clone())})?;
+            if !clips.is_empty() { return Ok(serde_json::json!({"day":day,"clips":clips})); }
+        }
+        Ok(serde_json::json!({"day":null,"clips":[]}))
+    }).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    result.map(Json).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn valid_recording_day(day: &str) -> bool {
+    day.len() == 10 && day.bytes().enumerate()
+        .all(|(i,c)| if i == 4 || i == 7 { c == b'-' } else { c.is_ascii_digit() })
 }
 
 async fn backup(State(app): State<App>) -> impl IntoResponse {
@@ -126,6 +146,7 @@ async fn main() {
         .route("/api/cameras", get(cameras))
         .route("/api/snapshot/{id}", get(snapshot))
         .route("/api/clips", get(clips))
+        .route("/api/clips/latest/{id}", get(latest_clips))
         .route("/api/backup", get(backup))
         .nest_service("/media", ServeDir::new(&app.recordings))
         .with_state(app);
