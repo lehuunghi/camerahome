@@ -3,16 +3,119 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CameraHome</title>
 <style>
-:root{color-scheme:dark;--ink:#eef4fa;--muted:#a5b7c9;--panel:#142031;--line:#2c3e53;--mint:#76e8bd}*{box-sizing:border-box}body{margin:0;background:#0b1420;color:var(--ink);font:16px system-ui,sans-serif}header{border-bottom:1px solid var(--line);background:#101b29}header div,main{max-width:1240px;margin:auto;padding:22px 28px}header strong{color:var(--mint);font-size:22px}main{padding-top:34px}h1{margin:0;font-size:clamp(2rem,4vw,3rem);letter-spacing:-.04em}h2{font-size:1.25rem;margin:0 0 14px}.bar,.title,.card>div,.filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.title,.card>div{justify-content:space-between}.sub{color:var(--muted);margin:8px 0 20px}.bar{color:var(--muted);margin:0 0 26px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,265px),1fr));gap:16px}.card,section.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}.card img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#233246;color:var(--muted)}.card>div{padding:14px}.online{color:var(--mint)}.panel{padding:20px;margin-top:26px}button,input,select{font:inherit;padding:8px 12px;border-radius:8px;color:var(--ink);background:#1d3045;border:1px solid #3c5269}button{cursor:pointer}button:hover{border-color:var(--mint)}.filters{margin-bottom:14px}[hidden]{display:none!important}video{width:min(100%,760px);display:block;margin:10px 0;max-height:430px}video[hidden]{display:none}ul{list-style:none;padding:0;margin:0;max-height:380px;overflow:auto}li{padding:7px 0;border-bottom:1px solid var(--line)}li button{width:100%;text-align:left}#backup{white-space:pre-wrap}
-nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted);text-decoration:none}nav a:hover{color:var(--mint)}form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;align-items:end}form label{display:grid;gap:6px}form input{width:100%;min-width:0}.accent{background:var(--mint);color:#10241f;font-weight:700;border-color:transparent}.notice{color:var(--muted);line-height:1.5}code{overflow-wrap:anywhere}section{scroll-margin-top:16px}.camera-preview{display:block;width:100%;border:0;border-radius:0;padding:0}.actions{display:flex;gap:8px;flex-wrap:wrap;padding:0 14px 14px}.actions button{flex:1}.check{display:flex;align-items:center;gap:8px}.check input{width:auto}.layout{display:grid;gap:20px}@media(min-width:980px){.layout{grid-template-columns:1fr 1fr}.layout video{margin-left:auto;margin-right:auto}}.layout .panel{min-width:0}.panel video{background:#0b1420}.card .actions{justify-content:start}
-.timeline-track{height:10px;position:relative;background:#26374a;border-radius:999px;overflow:hidden;margin-top:10px}.timeline-track i{position:absolute;height:100%;background:var(--mint);min-width:2px}.timeline-input{width:100%;padding:0;accent-color:var(--mint)}.timeline-times{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums;color:var(--muted)}.playback-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}.active-clip{border-color:var(--mint)}.danger{color:#ffb5b0;border-color:#c46f6c}#cleanup{margin-top:18px}.clip-list{max-height:360px;overflow:auto}
+:root {
+  color-scheme: light;
+  --background:#f1f6f4; --surface:#fff; --text:#142b26; --muted:#4e665e;
+  --line:#d9e5df; --accent:#126d57; --accent-pale:#e4f3ec; --monitor:#101f1e;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+* { box-sizing:border-box; }
+[hidden] { display:none!important; }
+body { margin:0; color:var(--text); background:var(--background); font-size:1rem; }
+header { background:var(--surface); border-bottom:1px solid var(--line); }
+.shell { width:min(1180px,100%); margin-inline:auto; padding-inline:clamp(16px,4vw,36px); }
+.header-row { min-height:76px; display:flex; align-items:center; justify-content:space-between; gap:24px; }
+.brand { display:flex; gap:10px; align-items:center; font-size:1.28rem; font-weight:800; letter-spacing:-.045em; }
+.brand-icon { width:33px; height:33px; border-radius:12px; background:var(--accent); color:white; display:grid; place-items:center; }
+.brand-icon:before { content:""; width:12px; height:12px; border:2px solid currentColor; border-radius:50%; box-shadow:inset 0 0 0 3px var(--accent),inset 0 0 0 10px currentColor; }
+nav { display:flex; gap:6px; padding:4px; border:1px solid var(--line); border-radius:14px; background:var(--background); }
+nav a { text-decoration:none; color:var(--muted); font-weight:650; font-size:.9rem; padding:9px 13px; border-radius:10px; white-space:nowrap; }
+nav a[aria-current="page"] { background:var(--surface); color:var(--accent); box-shadow:0 1px 4px #133d3020; }
+main { padding-block:clamp(24px,4.4vw,52px) 48px; }
+.view-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:21px; }
+h1,h2,h3,p { margin:0; }
+h1 { font-size:clamp(1.7rem,4vw,2.55rem); line-height:1.08; letter-spacing:-.052em; }
+h2 { font-size:1.2rem; letter-spacing:-.022em; }
+h3 { font-size:1rem; margin:4px 0 8px; }
+.bar,.notice,#results,#playback-state { font-size:.9rem; color:var(--muted); line-height:1.55; }
+.bar { margin-top:7px; }
+.notice,#results,#backup { margin-block:10px 14px; }
+[role=status]:empty { display:none; }
+button,input,select { font:inherit; border:1px solid var(--line); color:inherit; background:var(--surface); border-radius:10px; padding:9px 12px; min-width:0; }
+button,select,summary { cursor:pointer; }
+button { font-weight:650; font-size:.9rem; }
+button:disabled { opacity:.45; cursor:default; }
+button:hover:not(:disabled), nav a:hover { background:var(--accent-pale); border-color:#a8cfc0; }
+:focus-visible { outline:3px solid #29a482; outline-offset:2px; }
+.accent { background:var(--accent); color:white; border-color:var(--accent); }
+.accent:hover:not(:disabled) { background:#0c5a46; color:white; }
+.panel,.card,.monitor { border-radius:19px; border:1px solid var(--line); background:var(--surface); overflow:hidden; min-width:0; }
+.panel { padding:clamp(16px,3vw,25px); }
+.panel + .panel { margin-top:16px; }
+.live-layout { display:grid; grid-template-columns:minmax(0,2.25fr) minmax(250px,1fr); gap:18px; align-items:start; }
+.monitor { color:#f4faf6; background:var(--monitor); border-color:#233b37; box-shadow:0 12px 28px #182f261e; }
+.monitor .title { padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.monitor .playback-controls { margin:0; }
+.monitor button { color:#effaf6; background:#263d38; border-color:#405c54; }
+.monitor button:hover:not(:disabled) { color:#fff; background:#33534a; }
+.monitor #live-sound { background:#dcf4e8; color:#145744; border-color:#dcf4e8; }
+.monitor #live-sound:hover { background:#bde8d4; color:#124334; }
+.monitor #live-state { color:#d0e5dc; padding:10px 16px 13px; font-size:.86rem; }
+.monitor video { width:100%; aspect-ratio:16/9; max-height:62vh; margin:0; display:block; object-fit:contain; background:#081412; }
+#live-empty { display:grid; place-items:center; min-height:clamp(220px,42vw,480px); color:#cbe0d7; padding:18px; text-align:center; }
+#live:not([hidden]) + #live-empty { display:none; }
+.camera-list-title { margin:2px 0 12px; }
+.grid { display:grid; gap:10px; }
+.card { display:grid; grid-template-columns:104px minmax(0,1fr); align-items:center; gap:3px 11px; padding:9px; border-radius:14px; }
+.card[data-active="true"] { border-color:#70b6a0; box-shadow:inset 0 0 0 1px #70b6a0; background:#f5fbf8; }
+.camera-preview { display:block; padding:0; border:0; border-radius:8px; overflow:hidden; grid-row:span 2; }
+.card img { display:block; width:100%; aspect-ratio:16/10; object-fit:cover; color:#b1c5bd; background:#213934; font-size:.8rem; }
+.camera-meta { display:grid; gap:2px; align-self:end; }
+.camera-meta strong { font-size:.95rem; overflow-wrap:anywhere; }
+.camera-meta span { font-size:.82rem; color:var(--muted); }
+.camera-meta .online { color:var(--accent); }
+.camera-meta .online:before { content:""; display:inline-block; width:6px;height:6px;border-radius:50%; margin-right:6px;background:#198466; vertical-align:2px; }
+.actions { display:flex; gap:4px; flex-wrap:wrap; align-self:start; }
+.actions button { border:none; background:transparent; padding:4px 6px; font-size:.82rem; color:var(--accent); }
+.replay-layout { max-width:950px; margin-inline:auto; }
+#player { display:block; width:100%; max-height:58vh; aspect-ratio:16/9; object-fit:contain; background:var(--monitor); border-radius:13px; margin-top:10px; }
+.filters,.playback-controls { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0; }
+.filters label,.playback-controls label { color:var(--muted); font-size:.9rem; }
+.filters input,.filters select,.playback-controls select { margin-left:4px; }
+.timeline-track { height:9px; position:relative; background:#dae9e2; border-radius:999px; overflow:hidden; margin-top:16px; }
+.timeline-track i { position:absolute; height:100%; background:#1d9273; min-width:2px; }
+.timeline-input { width:100%; padding:0; accent-color:var(--accent); }
+.timeline-times { display:flex; justify-content:space-between; color:var(--muted); font-size:.9rem; font-variant-numeric:tabular-nums; }
+.timeline-times output { font-weight:700; color:var(--accent); }
+ul { list-style:none; padding:0; margin:0; }
+.clip-list { max-height:320px; overflow:auto; }
+.clip-list li { border-bottom:1px solid var(--line); padding:3px 0; }
+.clip-list button { text-align:left; width:100%; border-color:transparent; }
+.clip-list .active-clip { color:var(--accent); background:var(--accent-pale); }
+#cleanup { margin-top:20px; padding-top:15px; border-top:1px solid var(--line); }
+#cleanup summary { font-weight:650; }
+.danger { color:#a52c24; border-color:#daaba6; }
+form { display:grid; gap:13px; grid-template-columns:repeat(auto-fit,minmax(min(100%,205px),1fr)); align-items:end; }
+form label { display:grid; gap:6px; font-size:.9rem; color:var(--muted); }
+form input,form select { width:100%; color:var(--text); }
+form button { min-height:42px; }
+form .check { display:flex; align-items:center; gap:8px; min-height:42px; }
+form .check input { width:auto; accent-color:var(--accent); }
+code { overflow-wrap:anywhere; }
+@media(max-width:820px) {
+  .live-layout { grid-template-columns:1fr; }
+  .grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr)); }
+}
+@media(max-width:580px) {
+  .header-row { min-height:60px; }
+  nav { position:fixed; z-index:5; left:0; right:0; bottom:0; justify-content:space-around; border-radius:0; padding:8px 5px calc(8px + env(safe-area-inset-bottom)); background:var(--surface); box-shadow:0 -3px 18px #133d3016; }
+  nav a { flex:1; text-align:center; padding:10px 6px; }
+  nav a[aria-current="page"] { background:var(--accent-pale); box-shadow:none; }
+  main { padding-bottom:calc(83px + env(safe-area-inset-bottom)); }
+  .view-heading { margin-bottom:15px; }
+}
 </style></head>
-<body><header><div><strong>CameraHome</strong><nav><a href="#cameras">Camera</a><a href="#add">Thêm camera</a><a href="#recordings">Bản ghi</a><a href="#drive">Google Drive</a></nav></div></header><main>
-<div class="title"><h1>Camera nhà bạn</h1><button id="refresh">Làm mới</button></div>
-<p class="sub">Camera, bản ghi chuyển động và Google Drive</p>
-<p id="connection" class="bar" role="status">Đang lấy trạng thái Frigate…</p>
-<div id="cameras" class="grid"></div>
-<div class="layout"><section class="panel" id="live" hidden><div class="title"><h2 id="live-title">Xem trực tiếp</h2><div class="playback-controls"><button id="live-sound" type="button">Bật tiếng</button><button id="stop-live">Đóng luồng</button></div></div><video id="live-video" controls muted autoplay playsinline></video><p id="live-state" role="status"></p></section>
+<body>
+<header><div class="shell header-row"><div class="brand"><span aria-hidden="true" class="brand-icon"></span>CameraHome</div>
+<nav aria-label="Điều hướng chính"><a href="#live" data-view="live" aria-current="page">Trực tiếp</a><a href="#recordings" data-view="recordings">Xem lại</a><a href="#add" data-view="admin">Quản trị</a></nav></div></header>
+<main class="shell">
+<div id="view-live">
+<div class="view-heading"><div><h1>Trực tiếp</h1><p id="connection" class="bar" role="status">Đang kết nối camera…</p></div><button id="refresh">Làm mới</button></div>
+<div class="live-layout"><div class="monitor"><section id="live" hidden><div class="title"><h2 id="live-title">Xem trực tiếp</h2><div class="playback-controls"><button id="live-sound" type="button">Bật tiếng</button><button id="stop-live">Đóng luồng</button></div></div><video id="live-video" controls muted autoplay playsinline></video><p id="live-state" role="status"></p></section>
+<div id="live-empty">Chọn camera để xem trực tiếp</div></div>
+<aside aria-label="Danh sách camera"><h2 class="camera-list-title">Camera của bạn</h2><div id="cameras" class="grid"></div></aside></div>
+</div>
+<div id="view-recordings" class="replay-layout" hidden><div class="view-heading"><h1>Xem lại</h1></div>
 <section class="panel" id="recordings"><h2 id="recordings-title">Xem lại</h2>
 <div class="filters"><label>Ngày Việt Nam <input id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
 <video id="player" playsinline hidden></video>
@@ -28,14 +131,7 @@ nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted
 <div class="filters" id="cleanup-confirm" hidden><label>Nhập XOA <input id="cleanup-code" autocomplete="off"></label><button class="danger" id="cleanup-delete">Xóa vĩnh viễn</button></div>
 <p id="cleanup-status" role="status"></p></details>
 </section></div>
-<section class="panel" id="add"><h2>Quản trị camera</h2><h3>Thêm camera Tapo</h3><p class="notice">Camera cần ở mạng 192.168.88.x và hỗ trợ RTSP. Dùng Camera Account được tạo trong cài đặt nâng cao của app Tapo.</p>
-<form id="camera-form">
-<label>Mã camera <input name="id" placeholder="tapo_88_9" pattern="[A-Za-z0-9_\-]{1,48}" required maxlength="48"></label>
-<label>IP camera <input name="ip" placeholder="192.168.88.9" required inputmode="decimal" maxlength="15"></label>
-<label>Tên Camera Account <input name="username" required maxlength="128" autocomplete="off"></label>
-<label>Mật khẩu Camera Account <input name="password" type="password" required maxlength="128" autocomplete="new-password"></label>
-<label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label><label class="check"><input name="compact" type="checkbox" checked> Bản ghi nhẹ (luồng phụ)</label><button class="accent" type="submit">Thêm camera</button>
-</form><p id="camera-result" role="status"></p></section>
+<div id="view-admin" hidden><div class="view-heading"><h1>Quản trị</h1></div>
 <section class="panel" id="camera-settings" hidden><h2 id="settings-title">Cài đặt camera</h2>
 <form id="settings-form">
 <label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label>
@@ -43,6 +139,14 @@ nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted
 <button class="accent" type="submit">Lưu thay đổi</button>
 </form><p class="notice">Tiếng khóc cần camera có micro. Chế độ kết hợp có thể giữ cả đoạn có âm thanh lớn khác. Bản ghi nhẹ dùng luồng phụ; live vẫn dùng luồng chính.</p>
 <p id="settings-result" role="status"></p></section>
+<section class="panel" id="add"><h2>Thêm camera Tapo</h2><p class="notice">Camera cần ở mạng 192.168.88.x và hỗ trợ RTSP. Dùng Camera Account được tạo trong cài đặt nâng cao của app Tapo.</p>
+<form id="camera-form">
+<label>Mã camera <input name="id" placeholder="tapo_88_9" pattern="[A-Za-z0-9_\-]{1,48}" required maxlength="48"></label>
+<label>IP camera <input name="ip" placeholder="192.168.88.9" required inputmode="decimal" maxlength="15"></label>
+<label>Tên Camera Account <input name="username" required maxlength="128" autocomplete="off"></label>
+<label>Mật khẩu Camera Account <input name="password" type="password" required maxlength="128" autocomplete="new-password"></label>
+<label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label><label class="check"><input name="compact" type="checkbox" checked> Bản ghi nhẹ (luồng phụ)</label><button class="accent" type="submit">Thêm camera</button>
+</form><p id="camera-result" role="status"></p></section>
 <section class="panel" id="drive"><h2>Google Drive</h2><p id="backup" role="status">Đang kiểm tra…</p>
 <p class="notice">Trong Google Cloud, bật Drive API và tạo OAuth client loại Web application. Thêm URL chuyển hướng: <code id="callback-url"></code>. Nếu ứng dụng đang ở chế độ thử nghiệm, thêm tài khoản Google của bạn vào danh sách người dùng thử.</p>
 <form id="drive-form">
@@ -51,7 +155,7 @@ nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted
 <label>OAuth Client Secret <input name="client_secret" type="password" required autocomplete="new-password" maxlength="300"></label>
 <button class="accent" type="submit">Kết nối Google Drive</button>
 </form><p id="drive-result" role="status"></p></section>
-</main><script>
+</div></main><script>
 const el = id => document.getElementById(id);
 const day = el('day'), filter = el('filter'), player = el('player');
 const dayMs = 86400000, vietnamOffset = 7 * 3600000;
@@ -61,6 +165,33 @@ el('cleanup-day').value = today;
 el('cleanup-day').max = today;
 let requestId = 0;
 let autoLive = true;
+let currentView = 'live';
+let liveCamera = '';
+const viewForHash = () => ({'#recordings':'recordings','#add':'admin','#drive':'admin','#camera-settings':'admin'})[location.hash] || 'live';
+const cameraName = id => ({bep:'Bếp',khach:'Phòng khách',ngu:'Phòng ngủ'})[id] || id;
+const nav = [...document.querySelectorAll('nav [data-view]')];
+function setView(view, remember=true) {
+  if (currentView === 'live' && view !== 'live') stopStream();
+  if (currentView === 'recordings' && view !== 'recordings') stopReplay();
+  currentView=view;
+  for (const name of ['live','recordings','admin']) el('view-'+name).hidden=name!==view;
+  for (const link of nav) {
+    if (link.dataset.view===view) link.setAttribute('aria-current','page');
+    else link.removeAttribute('aria-current');
+  }
+  if (remember) history.replaceState(null,'',({live:'#live',recordings:'#recordings',admin:'#add'})[view]);
+}
+function selectNav() {
+  const view=viewForHash();
+  setView(view,false);
+  if (location.hash==='#drive') el('drive').scrollIntoView({block:'start'});
+  else window.scrollTo(0,0);
+  if (view==='live') {
+    if (liveCamera) startLive(liveCamera);
+    else {autoLive=true;refresh();}
+  } else if (view==='recordings') clips();
+}
+window.addEventListener('hashchange',selectNav);
 async function read(path, type = 'json') {
   const response = await fetch(path, {cache:'no-store'});
   if (!response.ok) throw new Error(String(response.status));
@@ -70,20 +201,20 @@ async function cameras() {
   try {
     const list = await read('/api/cameras');
     const selected = filter.value;
-    filter.replaceChildren(new Option('Tất cả',''), ...list.map(item => new Option(item.id,item.id)));
+    filter.replaceChildren(new Option('Tất cả',''), ...list.map(item => new Option(cameraName(item.id),item.id)));
     filter.value = list.some(item => item.id === selected) ? selected : '';
     el('connection').textContent = list.filter(item => item.fps > 0).length + '/' + list.length + ' camera đang nhận hình';
     if (!list.length) el('connection').textContent = 'Chưa có camera. Mở Quản trị camera để thêm camera Tapo.';
     el('cameras').replaceChildren(...list.map(item => {
-      const card = document.createElement('article'); card.className = 'card';
+      const card = document.createElement('article'); card.className = 'card'; card.dataset.id=item.id; card.dataset.active=String(item.id===liveCamera);
       const image = document.createElement('img'); image.alt = 'Ảnh mới nhất của ' + item.id;
       if (item.fps > 0) image.src = '/api/snapshot/' + encodeURIComponent(item.id) + '?' + Date.now();
-      const row = document.createElement('div');
-      const title = document.createElement('strong'); title.textContent = item.id;
-      const status = document.createElement('span'); status.textContent = item.fps > 0 ? 'Đang nhận hình' : 'Chưa có hình';
+      const row = document.createElement('div'); row.className='camera-meta';
+      const title = document.createElement('strong'); title.textContent = cameraName(item.id);
+      const status = document.createElement('span'); status.textContent = item.fps > 0 ? 'Đang hoạt động' : 'Mất tín hiệu';
       if (item.fps > 0) status.className = 'online';
       const preview = document.createElement('button'); preview.className = 'camera-preview';
-      preview.setAttribute('aria-label','Mở camera ' + item.id);
+      preview.setAttribute('aria-label','Mở camera ' + cameraName(item.id));
       preview.append(image); preview.onclick = () => openCamera(item.id,false);
       const actions = document.createElement('div'); actions.className = 'actions';
       for (const [label,run] of [['Trực tiếp',() => openCamera(item.id,false)],['Xem lại',() => openCamera(item.id,true)],['Cài đặt',() => openSettings(item.id)]]) {
@@ -210,7 +341,7 @@ function showClips(list) {
   }));
   el('clips').replaceChildren(...rows.slice().reverse().map(row => {
     const item=document.createElement('li'), button=document.createElement('button');
-    button.textContent=fmt(row.second)+' · '+row.camera;button.dataset.path=row.path;
+    button.textContent=fmt(row.second)+' · '+cameraName(row.camera);button.dataset.path=row.path;
     button.onclick=()=>playClip(row.path);item.append(button);return item;
   }));
   if (activePath && !active()) resetReplay();
@@ -230,7 +361,7 @@ async function clips() {
   } catch {if(current===requestId) {showClips([]);el('results').textContent='Không tải được danh sách bản ghi.';}}
 }
 async function openCamera(id,replay) {
-  autoLive=false;filter.value=id;el('recordings-title').textContent='Xem lại · '+id;resetReplay();
+  autoLive=false;setView(replay?'recordings':'live');filter.value=id;el('recordings-title').textContent='Bản ghi · '+cameraName(id);resetReplay();
   if(replay){stopStream();el('recordings').scrollIntoView({block:'start'});}
   else startLive(id);
   const current=++requestId;
@@ -274,9 +405,10 @@ el('cleanup-delete').onclick=async()=>{
 };
 let managing = '';
 async function openSettings(id) {
+  setView('admin');
   managing = id;
   el('camera-settings').hidden = false;
-  el('settings-title').textContent = 'Cài đặt · ' + id;
+  el('settings-title').textContent = 'Cài đặt · ' + cameraName(id);
   el('camera-settings').scrollIntoView({block:'start'});
   const form = el('settings-form'), button = form.querySelector('button');
   button.disabled = true;
@@ -362,9 +494,11 @@ liveSound.onclick = () => {
 };
 function startLive(id) {
   stopStream();
+  liveCamera=id;
+  document.querySelectorAll('.card').forEach(card=>card.dataset.active=String(card.dataset.id===id));
   const panel = el('live'), video = el('live-video'), status = el('live-state');
-  panel.hidden = false; el('live-title').textContent = id + ' · Trực tiếp';
-  panel.scrollIntoView({block:'nearest'});
+  panel.hidden = false; el('live-title').textContent = cameraName(id);
+  if (window.innerWidth < 820 && panel.getBoundingClientRect().top < 0) panel.scrollIntoView({block:'start'});
   status.textContent = 'Đang kết nối…';
   if (!window.MediaSource) {stopStream = () => {panel.hidden = true;}; status.textContent = 'Trình duyệt này chưa hỗ trợ phát trực tiếp. Hãy thử Chrome hoặc Edge.'; return;}
   const source = new MediaSource(), objectUrl = URL.createObjectURL(source);
@@ -412,11 +546,13 @@ function startLive(id) {
 el('stop-live').onclick = () => stopStream();
 async function refresh() {
   await Promise.all([cameras().then(list => {
-    const first = autoLive && list?.find(item => item.fps > 0);
+    const first = currentView === 'live' && autoLive && list?.find(item => item.fps > 0);
     if (first) {autoLive = false; return openCamera(first.id,false);}
     return clips();
   }),backup()]);
 }
-day.onchange = () => {resetReplay();clips();}; filter.onchange = () => {resetReplay();el('recordings-title').textContent = filter.value ? 'Xem lại · ' + filter.value : 'Xem lại'; clips();}; el('refresh').onclick = refresh;
-refresh(); setInterval(refresh,30000);
+day.onchange = () => {resetReplay();clips();}; filter.onchange = () => {resetReplay();el('recordings-title').textContent = filter.value ? 'Bản ghi · ' + cameraName(filter.value) : 'Bản ghi'; clips();}; el('refresh').onclick = refresh;
+selectNav();
+if (currentView!=='live') refresh();
+setInterval(refresh,30000);
 </script></body></html>
