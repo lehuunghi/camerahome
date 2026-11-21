@@ -107,7 +107,7 @@ fn update_settings(config: &mut Value, id: &str, url: &str, settings: CameraSett
     let compact_id = format!("{id}__compact");
     let go2rtc = config.as_object_mut().ok_or_else(internal)?.entry("go2rtc").or_insert_with(|| json!({}));
     let streams = object_at(go2rtc, "streams")?;
-    streams.insert(id.to_owned(), json!([url]));
+    streams.insert(id.to_owned(), json!([url, format!("ffmpeg:{id}#audio=aac")]));
     if settings.compact {
         let location = url.split(['?', '#']).next().ok_or_else(internal)?;
         let mut substream = location.strip_suffix("/stream1").ok_or_else(internal)?.to_owned();

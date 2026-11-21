@@ -12,7 +12,7 @@ nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted
 <p class="sub">Camera, bản ghi chuyển động và Google Drive</p>
 <p id="connection" class="bar" role="status">Đang lấy trạng thái Frigate…</p>
 <div id="cameras" class="grid"></div>
-<div class="layout"><section class="panel" id="live" hidden><div class="title"><h2 id="live-title">Xem trực tiếp</h2><button id="stop-live">Đóng luồng</button></div><video id="live-video" controls muted autoplay playsinline></video><p id="live-state" role="status"></p></section>
+<div class="layout"><section class="panel" id="live" hidden><div class="title"><h2 id="live-title">Xem trực tiếp</h2><div class="playback-controls"><button id="live-sound" type="button">Bật tiếng</button><button id="stop-live">Đóng luồng</button></div></div><video id="live-video" controls muted autoplay playsinline></video><p id="live-state" role="status"></p></section>
 <section class="panel" id="recordings"><h2 id="recordings-title">Xem lại</h2>
 <div class="filters"><label>Ngày Việt Nam <input id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
 <video id="player" playsinline hidden></video>
@@ -351,6 +351,15 @@ el('drive-form').onsubmit = async event => {
 };
 
 let stopStream = () => {};
+const liveVideo = el('live-video'), liveSound = el('live-sound');
+liveVideo.addEventListener('volumechange', () => {
+  liveSound.textContent = liveVideo.muted ? 'Bật tiếng' : 'Tắt tiếng';
+});
+liveSound.onclick = () => {
+  liveVideo.muted = !liveVideo.muted;
+  if (!liveVideo.muted && liveVideo.volume === 0) liveVideo.volume = .7;
+  if (!liveVideo.muted) liveVideo.play().catch(() => {});
+};
 function startLive(id) {
   stopStream();
   const panel = el('live'), video = el('live-video'), status = el('live-state');
