@@ -1,6 +1,6 @@
 # CameraHome
 
-Bảng quản lý nội bộ bằng Rust cho Frigate. CameraHome hiển thị ảnh mới nhất và trạng thái nhận hình, phát lại đoạn MP4 đã lưu, và báo kết quả lượt sao lưu Google Drive gần nhất. Frigate xử lý RTSP và ghi hình. CameraHome hiện đọc dữ liệu. Thêm camera, chỉnh vùng chuyển động và các thay đổi đầu ghi vẫn thực hiện trong Frigate. Giao diện hiện ảnh cập nhật định kỳ, không phát trực tiếp liên tục.
+Bảng quản lý nội bộ bằng Rust cho Frigate. CameraHome hiển thị ảnh mới nhất và trạng thái nhận hình, phát lại đoạn MP4 đã lưu, và báo kết quả lượt sao lưu Google Drive gần nhất. Frigate xử lý RTSP và ghi hình. CameraHome hỗ trợ thêm camera Tapo, xem trực tiếp và kết nối Drive trong giao diện web. Các thiết lập đầu ghi nâng cao tiếp tục dùng cấu hình Frigate.
 
 ## Cài trên Mini PC có aaPanel
 
@@ -30,3 +30,9 @@ Bảng quản lý nội bộ bằng Rust cho Frigate. CameraHome hiển thị �
 6. Thử từng camera bằng cách đi qua vùng quan sát. Xác nhận Frigate tạo đoạn MP4, CameraHome phát lại được đoạn đó, và Drive nhận file sau lượt Cron. Ngày lọc trên web dùng UTC theo cấu trúc thư mục của Frigate.
 
 Không đưa cấu hình RTSP thật, token rclone, dữ liệu video hoặc mật khẩu lên GitHub.
+
+## Quản lý trên CameraHome
+
+Bản mới có biểu mẫu thêm camera Tapo bằng IP và Camera Account, xem trực tiếp qua go2rtc/MSE, phát lại bản ghi và OAuth Google Drive. Frigate vẫn ghi clip khi có chuyển động. Cấu hình có `PUBLIC_ORIGIN` và `CAMERA_SUBNET` trong Compose. Nginx phải chuyển tiếp WebSocket cho `/api/live/` và yêu cầu đăng nhập cho mọi đường dẫn. Tắt access log cho `/drive/callback` để mã OAuth không xuất hiện trong log.
+
+Tạo Google OAuth client loại Web application, bật Drive API và thêm URL chuyển hướng `https://camera.nghi.org/drive/callback`. Cấp quyền trong giao diện CameraHome. Ứng dụng chỉ xin quyền Drive theo tệp và tạo thư mục đích bằng tài khoản được cấp quyền. Dữ liệu xác thực sao lưu ở `/opt/camerahome-data`, cần quyền thư mục 0700. Bộ hẹn giờ trong container kiểm tra clip mỗi 5 phút. Nếu đã dùng Cron cũ, tắt nó để dùng một tác vụ sao lưu.

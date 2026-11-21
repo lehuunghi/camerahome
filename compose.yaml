@@ -6,9 +6,13 @@ services:
       - "127.0.0.1:8180:8080"
     environment:
       FRIGATE_URL: http://frigate:5000
+      PUBLIC_ORIGIN: https://camera.nghi.org
+      CAMERA_SUBNET: 192.168.88
     volumes:
       - /opt/frigate/storage/recordings:/recordings:ro
       - /opt/frigate/backup-status:/backup-status:ro
+      - /opt/frigate/config:/frigate-config:ro
+      - /opt/camerahome-data:/app-data
     networks:
       - camera_backend
 

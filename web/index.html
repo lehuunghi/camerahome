@@ -4,18 +4,35 @@
 <title>CameraHome</title>
 <style>
 :root{color-scheme:dark;--ink:#eef4fa;--muted:#a5b7c9;--panel:#142031;--line:#2c3e53;--mint:#76e8bd}*{box-sizing:border-box}body{margin:0;background:#0b1420;color:var(--ink);font:16px system-ui,sans-serif}header{border-bottom:1px solid var(--line);background:#101b29}header div,main{max-width:1240px;margin:auto;padding:22px 28px}header strong{color:var(--mint);font-size:22px}main{padding-top:34px}h1{margin:0;font-size:clamp(2rem,4vw,3rem);letter-spacing:-.04em}h2{font-size:1.25rem;margin:0 0 14px}.bar,.title,.card>div,.filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.title,.card>div{justify-content:space-between}.sub{color:var(--muted);margin:8px 0 20px}.bar{color:var(--muted);margin:0 0 26px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,265px),1fr));gap:16px}.card,section.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}.card img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#233246;color:var(--muted)}.card>div{padding:14px}.online{color:var(--mint)}.panel{padding:20px;margin-top:26px}button,input,select{font:inherit;padding:8px 12px;border-radius:8px;color:var(--ink);background:#1d3045;border:1px solid #3c5269}button{cursor:pointer}button:hover{border-color:var(--mint)}.filters{margin-bottom:14px}video{width:min(100%,760px);display:block;margin:10px 0;max-height:430px}video[hidden]{display:none}ul{list-style:none;padding:0;margin:0;max-height:380px;overflow:auto}li{padding:7px 0;border-bottom:1px solid var(--line)}li button{width:100%;text-align:left}#backup{white-space:pre-wrap}
+nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted);text-decoration:none}nav a:hover{color:var(--mint)}form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;align-items:end}form label{display:grid;gap:6px}form input{width:100%;min-width:0}.accent{background:var(--mint);color:#10241f;font-weight:700;border-color:transparent}.notice{color:var(--muted);line-height:1.5}code{overflow-wrap:anywhere}section{scroll-margin-top:16px}
 </style></head>
-<body><header><div><strong>CameraHome</strong></div></header><main>
+<body><header><div><strong>CameraHome</strong><nav><a href="#cameras">Camera</a><a href="#add">Thêm camera</a><a href="#recordings">Bản ghi</a><a href="#drive">Google Drive</a></nav></div></header><main>
 <div class="title"><h1>Camera nhà bạn</h1><button id="refresh">Làm mới</button></div>
 <p class="sub">Camera, bản ghi chuyển động và Google Drive</p>
 <p id="connection" class="bar" role="status">Đang lấy trạng thái Frigate…</p>
 <div id="cameras" class="grid"></div>
-<section class="panel"><h2>Bản ghi chuyển động</h2><div class="filters">
+<section class="panel" id="live" hidden><div class="title"><h2 id="live-title">Xem trực tiếp</h2><button id="stop-live">Đóng luồng</button></div><video id="live-video" controls muted autoplay playsinline></video><p id="live-state" role="status"></p></section>
+<section class="panel" id="add"><h2>Thêm camera Tapo</h2><p class="notice">Camera cần ở mạng 192.168.88.x và hỗ trợ RTSP. Dùng Camera Account được tạo trong cài đặt nâng cao của app Tapo.</p>
+<form id="camera-form">
+<label>Mã camera <input name="id" placeholder="tapo_88_9" pattern="[A-Za-z0-9_\-]{1,48}" required maxlength="48"></label>
+<label>IP camera <input name="ip" placeholder="192.168.88.9" required inputmode="decimal" maxlength="15"></label>
+<label>Tên Camera Account <input name="username" required maxlength="128" autocomplete="off"></label>
+<label>Mật khẩu Camera Account <input name="password" type="password" required maxlength="128" autocomplete="new-password"></label>
+<button class="accent" type="submit">Thêm camera</button>
+</form><p id="camera-result" role="status"></p></section>
+<section class="panel" id="recordings"><h2>Bản ghi chuyển động</h2><div class="filters">
 <label>Ngày UTC <input id="day" type="date"></label>
 <label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
 <video id="player" controls playsinline hidden></video>
 <p id="results" role="status"></p><ul id="clips"></ul></section>
-<section class="panel"><h2>Sao lưu Google Drive</h2><p id="backup" role="status">Đang kiểm tra…</p></section>
+<section class="panel" id="drive"><h2>Google Drive</h2><p id="backup" role="status">Đang kiểm tra…</p>
+<p class="notice">Trong Google Cloud, bật Drive API và tạo OAuth client loại Web application. Thêm URL chuyển hướng: <code id="callback-url"></code>. Nếu ứng dụng đang ở chế độ thử nghiệm, thêm tài khoản Google của bạn vào danh sách người dùng thử.</p>
+<form id="drive-form">
+<label>Thư mục trên Drive <input name="folder" value="Tapo-Frigate" required maxlength="200"></label>
+<label>OAuth Client ID <input name="client_id" required autocomplete="off" maxlength="300"></label>
+<label>OAuth Client Secret <input name="client_secret" type="password" required autocomplete="new-password" maxlength="300"></label>
+<button class="accent" type="submit">Kết nối Google Drive</button>
+</form><p id="drive-result" role="status"></p></section>
 </main><script>
 const el = id => document.getElementById(id);
 const day = el('day'), filter = el('filter'), player = el('player');
@@ -41,7 +58,10 @@ async function cameras() {
       const title = document.createElement('strong'); title.textContent = item.id;
       const status = document.createElement('span'); status.textContent = item.fps > 0 ? 'Đang nhận hình' : 'Chưa có hình';
       if (item.fps > 0) status.className = 'online';
-      row.append(title,status); card.append(image,row); return card;
+      const open = document.createElement('button');
+      open.textContent = 'Xem trực tiếp';
+      open.onclick = () => startLive(item.id);
+      row.append(title,status,open); card.append(image,row); return card;
     }));
   } catch {
     el('connection').textContent = 'Không kết nối được với Frigate.';
@@ -70,9 +90,102 @@ async function clips() {
   }
 }
 async function backup() {
-  try {el('backup').textContent = await read('/api/backup','text');}
-  catch {el('backup').textContent = 'Không đọc được trạng thái sao lưu.';}
+  try {
+    const result = await read('/api/drive');
+    const [message, timestamp] = (result.last || '').split('|');
+    const last = timestamp ? message + ' · ' + new Date(Number(timestamp)*1000).toLocaleString('vi-VN') : message;
+    el('backup').textContent = result.folder ? 'Thư mục ' + result.folder + ' · ' + last : 'Chưa kết nối Google Drive.';
+  } catch {el('backup').textContent = 'Không đọc được trạng thái sao lưu.';}
 }
+async function submit(form, endpoint) {
+  const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.fromEntries(new FormData(form)))});
+  if (!response.ok) throw new Error((await response.text()).slice(0, 300) || 'Yêu cầu thất bại.');
+  return response;
+}
+el('camera-form').onsubmit = async event => {
+  event.preventDefault();
+  const form = event.currentTarget, button = form.querySelector('button');
+  button.disabled = true;
+  el('camera-result').textContent = 'Đang cập nhật Frigate…';
+  try {
+    await submit(form,'/api/cameras');
+    form.reset();
+    el('camera-result').textContent = 'Đã lưu cấu hình. Frigate đang nạp lại. Hãy kiểm tra trạng thái nhận hình.';
+    setTimeout(refresh, 12000);
+  } catch(error) {el('camera-result').textContent = error.message;}
+  finally {button.disabled = false;}
+};
+el('callback-url').textContent = location.origin + '/drive/callback';
+const driveResult = new URLSearchParams(location.search).get('drive');
+if (driveResult) {
+  el('drive-result').textContent = ({
+    ok:'Đã kết nối Google Drive.', expired:'Phiên xác thực đã hết hạn. Thử kết nối lại.',
+    cancelled:'Bạn đã dừng cấp quyền.', failed:'Không kết nối được. Kiểm tra Drive API, OAuth client và quyền của tài khoản.'
+  })[driveResult] || '';
+  history.replaceState(null,'',location.pathname + location.hash);
+}
+el('drive-form').onsubmit = async event => {
+  event.preventDefault();
+  const form = event.currentTarget, button = form.querySelector('button');
+  button.disabled = true;
+  try {
+    const response = await submit(form,'/api/drive');
+    location.assign((await response.json()).url);
+  } catch(error) {el('drive-result').textContent = error.message; button.disabled = false;}
+};
+
+let stopStream = () => {};
+function startLive(id) {
+  stopStream();
+  const panel = el('live'), video = el('live-video'), status = el('live-state');
+  panel.hidden = false; el('live-title').textContent = id + ' · Trực tiếp';
+  panel.scrollIntoView({block:'nearest'});
+  status.textContent = 'Đang kết nối…';
+  if (!window.MediaSource) {status.textContent = 'Trình duyệt này chưa hỗ trợ phát trực tiếp. Hãy thử Chrome hoặc Edge.'; return;}
+  const source = new MediaSource(), objectUrl = URL.createObjectURL(source);
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/live/' + encodeURIComponent(id));
+  ws.binaryType = 'arraybuffer';
+  let buffer, queue = [], codec, ended = false;
+  function fail(message) {status.textContent = message; ws.close();}
+  function push() {
+    if (!buffer || buffer.updating || ended) return;
+    if (buffer.buffered.length && video.currentTime > buffer.buffered.start(0) + 40) {
+      buffer.remove(buffer.buffered.start(0), video.currentTime - 15);
+      return;
+    }
+    if (queue.length) {
+      try {buffer.appendBuffer(queue.shift());}
+      catch {fail('Không phát được video. Kiểm tra định dạng H.264 của camera.');}
+    }
+  }
+  function initialize() {
+    if (buffer || !codec || source.readyState !== 'open' || ended) return;
+    try {
+      buffer = source.addSourceBuffer(codec);
+      buffer.addEventListener('updateend',push);
+      status.textContent = 'Đang phát trực tiếp';
+      push();
+    } catch {fail('Trình duyệt không hỗ trợ định dạng luồng camera.');}
+  }
+  source.addEventListener('sourceopen', initialize);
+  video.src = objectUrl;
+  ws.onmessage = event => {
+    if (typeof event.data === 'string') {
+      const message = JSON.parse(event.data);
+      if (message.type === 'error') {fail('Chưa mở được luồng. Kiểm tra RTSP và Camera Account.'); return;}
+      if (message.type === 'mse') {codec = message.value; initialize();}
+    } else if (queue.length < 80) {queue.push(event.data); push();}
+    else {fail('Luồng bị chậm. Mở lại để tiếp tục xem.');}
+  };
+  ws.onerror = () => {status.textContent = 'Không mở được kết nối trực tiếp.';};
+  ws.onclose = () => {if (!ended && status.textContent === 'Đang phát trực tiếp') status.textContent = 'Luồng đã ngắt. Bấm xem trực tiếp để kết nối lại.';};
+  stopStream = () => {
+    ended = true; ws.close(); video.removeAttribute('src'); video.load();
+    URL.revokeObjectURL(objectUrl); panel.hidden = true;
+  };
+}
+el('stop-live').onclick = () => stopStream();
 async function refresh() {await Promise.all([cameras().then(clips),backup()]);}
 day.onchange = clips; filter.onchange = clips; el('refresh').onclick = refresh;
 refresh(); setInterval(refresh,30000);

@@ -1,3 +1,4 @@
+mod manage;
 use axum::{extract::{Query, State}, http::{header, StatusCode}, response::{Html, IntoResponse}, routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -10,6 +11,9 @@ struct App {
     frigate: String,
     recordings: PathBuf,
     status: PathBuf,
+    management: std::sync::Arc<tokio::sync::Mutex<()>>,
+    oauth: std::sync::Arc<tokio::sync::Mutex<Option<manage::OAuthPending>>>,
+    drive_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 #[derive(Deserialize)]
@@ -110,9 +114,14 @@ async fn main() {
         client: reqwest::Client::builder().timeout(Duration::from_secs(5)).build().expect("HTTP client"),
         frigate: env::var("FRIGATE_URL").unwrap_or_else(|_| "http://frigate:5000".into()).trim_end_matches('/').to_owned(),
         recordings: env::var("RECORDINGS_DIR").unwrap_or_else(|_| "/recordings".into()).into(),
+        management: Default::default(),
+        drive_lock: Default::default(),
+        oauth: Default::default(),
         status: env::var("STATUS_DIR").unwrap_or_else(|_| "/backup-status".into()).into(),
     };
+    tokio::spawn(manage::backup_worker(app.clone()));
     let router = Router::new()
+        .merge(manage::routes())
         .route("/", get(|| async { Html(include_str!("../web/index.html")) }))
         .route("/api/cameras", get(cameras))
         .route("/api/snapshot/{id}", get(snapshot))
