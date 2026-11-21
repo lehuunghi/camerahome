@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CameraHome</title>
+<style>
+:root{color-scheme:dark;--ink:#eef4fa;--muted:#a5b7c9;--panel:#142031;--line:#2c3e53;--mint:#76e8bd}*{box-sizing:border-box}body{margin:0;background:#0b1420;color:var(--ink);font:16px system-ui,sans-serif}header{border-bottom:1px solid var(--line);background:#101b29}header div,main{max-width:1240px;margin:auto;padding:22px 28px}header strong{color:var(--mint);font-size:22px}main{padding-top:34px}h1{margin:0;font-size:clamp(2rem,4vw,3rem);letter-spacing:-.04em}h2{font-size:1.25rem;margin:0 0 14px}.bar,.title,.card>div,.filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.title,.card>div{justify-content:space-between}.sub{color:var(--muted);margin:8px 0 20px}.bar{color:var(--muted);margin:0 0 26px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,265px),1fr));gap:16px}.card,section.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}.card img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#233246;color:var(--muted)}.card>div{padding:14px}.online{color:var(--mint)}.panel{padding:20px;margin-top:26px}button,input,select{font:inherit;padding:8px 12px;border-radius:8px;color:var(--ink);background:#1d3045;border:1px solid #3c5269}button{cursor:pointer}button:hover{border-color:var(--mint)}.filters{margin-bottom:14px}video{width:min(100%,760px);display:block;margin:10px 0;max-height:430px}video[hidden]{display:none}ul{list-style:none;padding:0;margin:0;max-height:380px;overflow:auto}li{padding:7px 0;border-bottom:1px solid var(--line)}li button{width:100%;text-align:left}#backup{white-space:pre-wrap}
+</style></head>
+<body><header><div><strong>CameraHome</strong></div></header><main>
+<div class="title"><h1>Camera nhà bạn</h1><button id="refresh">Làm mới</button></div>
+<p class="sub">Camera, bản ghi chuyển động và Google Drive</p>
+<p id="connection" class="bar" role="status">Đang lấy trạng thái Frigate…</p>
+<div id="cameras" class="grid"></div>
+<section class="panel"><h2>Bản ghi chuyển động</h2><div class="filters">
+<label>Ngày UTC <input id="day" type="date"></label>
+<label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
+<video id="player" controls playsinline hidden></video>
+<p id="results" role="status"></p><ul id="clips"></ul></section>
+<section class="panel"><h2>Sao lưu Google Drive</h2><p id="backup" role="status">Đang kiểm tra…</p></section>
+</main><script>
+const el = id => document.getElementById(id);
+const day = el('day'), filter = el('filter'), player = el('player');
+day.value = new Date().toISOString().slice(0,10);
+let requestId = 0;
+async function read(path, type = 'json') {
+  const response = await fetch(path, {cache:'no-store'});
+  if (!response.ok) throw new Error(String(response.status));
+  return response[type]();
+}
+async function cameras() {
+  try {
+    const list = await read('/api/cameras');
+    const selected = filter.value;
+    filter.replaceChildren(new Option('Tất cả',''), ...list.map(item => new Option(item.id,item.id)));
+    filter.value = list.some(item => item.id === selected) ? selected : '';
+    el('connection').textContent = list.filter(item => item.fps > 0).length + '/' + list.length + ' camera đang nhận hình';
+    el('cameras').replaceChildren(...list.map(item => {
+      const card = document.createElement('article'); card.className = 'card';
+      const image = document.createElement('img'); image.alt = 'Ảnh mới nhất của ' + item.id;
+      if (item.fps > 0) image.src = '/api/snapshot/' + encodeURIComponent(item.id) + '?' + Date.now();
+      const row = document.createElement('div');
+      const title = document.createElement('strong'); title.textContent = item.id;
+      const status = document.createElement('span'); status.textContent = item.fps > 0 ? 'Đang nhận hình' : 'Chưa có hình';
+      if (item.fps > 0) status.className = 'online';
+      row.append(title,status); card.append(image,row); return card;
+    }));
+  } catch {
+    el('connection').textContent = 'Không kết nối được với Frigate.';
+    el('cameras').replaceChildren();
+  }
+}
+async function clips() {
+  const current = ++requestId;
+  const query = new URLSearchParams({day:day.value});
+  if (filter.value) query.set('camera',filter.value);
+  try {
+    const list = await read('/api/clips?' + query);
+    if (current !== requestId) return;
+    el('results').textContent = list.length ? list.length + ' đoạn gần nhất' : 'Không có bản ghi trong ngày này.';
+    el('clips').replaceChildren(...list.map(path => {
+      const item = document.createElement('li'), button = document.createElement('button');
+      const [,hour,camera,file] = path.split('/');
+      button.textContent = camera + ' · ' + hour + ':' + file.slice(0,5).replace('.',':') + ' UTC';
+      button.onclick = () => {player.src = '/media/' + path.split('/').map(encodeURIComponent).join('/'); player.hidden = false; player.play().catch(() => {});};
+      item.append(button); return item;
+    }));
+  } catch {
+    if (current !== requestId) return;
+    el('clips').replaceChildren();
+    el('results').textContent = 'Không tải được danh sách bản ghi.';
+  }
+}
+async function backup() {
+  try {el('backup').textContent = await read('/api/backup','text');}
+  catch {el('backup').textContent = 'Không đọc được trạng thái sao lưu.';}
+}
+async function refresh() {await Promise.all([cameras().then(clips),backup()]);}
+day.onchange = clips; filter.onchange = clips; el('refresh').onclick = refresh;
+refresh(); setInterval(refresh,30000);
+</script></body></html>

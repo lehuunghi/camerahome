@@ -1,0 +1,6 @@
+target/
+.env
+*.secret
+rclone.conf
+recordings/
+backup-status/
