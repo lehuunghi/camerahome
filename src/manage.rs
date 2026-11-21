@@ -56,7 +56,7 @@ async fn add_camera(State(app): State<App>, headers: HeaderMap, Json(input): Jso
     require_origin(&headers)?;
     let subnet = env::var("CAMERA_SUBNET").unwrap_or_else(|_| "192.168.88".into());
     let address = input.ip.octets();
-    if !camera_id(&input.id) || input.id.len() > 48 || (input.id.ends_with("__compact") || input.id.ends_with("__filtered")) || format!("{}.{}.{}", address[0], address[1], address[2]) != subnet
+    if !camera_id(&input.id) || input.id.len() > 48 || input.id.ends_with("__compact") || format!("{}.{}.{}", address[0], address[1], address[2]) != subnet
         || !(1..255).contains(&address[3]) || input.username.is_empty() || input.password.is_empty()
         || input.username.len() > 128 || input.password.len() > 128 {
         return Err(problem(StatusCode::BAD_REQUEST, "Kiểm tra mã camera, IP trong mạng camera và Camera Account."));
@@ -109,9 +109,6 @@ fn update_settings(config: &mut Value, id: &str, url: &str, settings: CameraSett
     let go2rtc = config.as_object_mut().ok_or_else(internal)?.entry("go2rtc").or_insert_with(|| json!({}));
     let streams = object_at(go2rtc, "streams")?;
     streams.insert(id.to_owned(), json!([url, format!("ffmpeg:{id}#audio=aac")]));
-    streams.insert(format!("{id}__filtered"), json!([format!(
-        "ffmpeg:{id}#video=copy#audio=aac#raw=-af highpass=f=95,afftdn=nr=8:tn=1,agate=threshold=0.008:ratio=2:attack=25:release=180"
-    )]));
     if settings.compact {
         let location = url.split(['?', '#']).next().ok_or_else(internal)?;
         let mut substream = location.strip_suffix("/stream1").ok_or_else(internal)?.to_owned();
@@ -197,19 +194,12 @@ fn encode(value: &str) -> String {
     output
 }
 
-#[derive(Deserialize)]
-struct LiveOptions {
-    #[serde(default)]
-    filtered: bool,
-}
-
-async fn live(State(app): State<App>, Path(id): Path<String>, Query(options): Query<LiveOptions>, headers: HeaderMap, ws: WebSocketUpgrade) -> Result<Response, Problem> {
+async fn live(State(app): State<App>, Path(id): Path<String>, headers: HeaderMap, ws: WebSocketUpgrade) -> Result<Response, Problem> {
     require_origin(&headers)?;
     if !camera_id(&id) || !app.frigate.starts_with("http://") {
         return Err(problem(StatusCode::BAD_REQUEST, "Mã camera không hợp lệ."));
     }
-    let stream = if options.filtered { format!("{id}__filtered") } else { id };
-    let url = format!("ws://{}/live/mse/api/ws?src={stream}", &app.frigate[7..]);
+    let url = format!("ws://{}/live/mse/api/ws?src={id}", &app.frigate[7..]);
     Ok(ws.on_upgrade(move |socket| live_session(socket, url)))
 }
 

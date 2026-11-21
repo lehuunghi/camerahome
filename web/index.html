@@ -529,7 +529,50 @@ el('drive-form').onsubmit = async event => {
 let stopStream = () => {};
 const liveVideo = el('live-video'), liveSound = el('live-sound');
 const liveFilter=el('live-filter'), ptzControls=el('ptz-controls');
-let useFilter=false;
+let useFilter=false, liveAudio=null;
+async function prepareLiveAudio() {
+  if (liveAudio) {await liveAudio.context.resume();return liveAudio;}
+  const Audio = window.AudioContext || window.webkitAudioContext;
+  if (!Audio) throw new Error('Trình duyệt chưa hỗ trợ lọc âm.');
+  const context = new Audio();
+  try {
+    await context.resume();
+    if (!context.audioWorklet) throw new Error('Trình duyệt chưa hỗ trợ lọc âm.');
+    const program = `
+      class QuietNoiseGate extends AudioWorkletProcessor {
+        constructor() {super();this.level=0;this.gain=1;}
+        process(inputs,outputs) {
+          const source=inputs[0], target=outputs[0];
+          if (!source.length) return true;
+          const levelDecay=1-Math.exp(-1/(sampleRate*.05));
+          const attack=1-Math.exp(-1/(sampleRate*.018));
+          const release=1-Math.exp(-1/(sampleRate*.18));
+          for(let i=0;i<target[0].length;i++){
+            let peak=0;
+            for(const channel of source) peak=Math.max(peak,Math.abs(channel[i]||0));
+            this.level+= (peak-this.level)*(peak>this.level ? .09 : levelDecay);
+            const wanted=Math.max(.2,Math.min(1,(this.level-.004)/.02));
+            this.gain+=(wanted-this.gain)*(wanted>this.gain?attack:release);
+            for(let c=0;c<target.length;c++) target[c][i]=(source[c]?.[i]||0)*this.gain;
+          }
+          return true;
+        }
+      }
+      registerProcessor('quiet-noise-gate',QuietNoiseGate);`;
+    const url=URL.createObjectURL(new Blob([program],{type:'text/javascript'}));
+    try {await context.audioWorklet.addModule(url);} finally {URL.revokeObjectURL(url);}
+    const bass=context.createBiquadFilter();
+    bass.type='highpass';bass.frequency.value=110;bass.Q.value=.65;
+    const gate=new AudioWorkletNode(context,'quiet-noise-gate');
+    const dry=context.createGain(), wet=context.createGain();
+    const source=context.createMediaElementSource(liveVideo);
+    source.connect(dry).connect(context.destination);
+    source.connect(bass).connect(gate).connect(wet).connect(context.destination);
+    dry.gain.value=1;wet.gain.value=0;
+    liveAudio={context,dry,wet};
+    return liveAudio;
+  } catch(error) {await context.close();throw error;}
+}
 function zoomControls(prefix, frame, video) {
   let scale=1,x=0,y=0,drag;
   const minus=el(prefix+'-zoom-out'), plus=el(prefix+'-zoom-in');
@@ -560,12 +603,25 @@ function zoomControls(prefix, frame, video) {
 const resetLiveZoom=zoomControls('live',el('live-frame'),liveVideo);
 const resetReplayZoom=zoomControls('replay',el('replay-frame'),player);
 liveFilter.setAttribute('aria-pressed','false');
-liveFilter.onclick=()=>{
+liveFilter.onclick=async()=>{
   if (!liveCamera) return;
-  useFilter=!useFilter;
-  liveFilter.setAttribute('aria-pressed',String(useFilter));
-  setIcon(liveFilter,'≋',useFilter?'Tắt lọc ồn':'Bật lọc ồn');
-  startLive(liveCamera,true);
+  const next=!useFilter;
+  liveFilter.disabled=true;
+  if (next) {
+    liveVideo.muted=false;
+    if (!liveVideo.volume) liveVideo.volume=.7;
+    liveVideo.play().catch(()=>{});
+  }
+  try {
+    const audio=await prepareLiveAudio();
+    const now=audio.context.currentTime;
+    audio.dry.gain.setTargetAtTime(next?0:1,now,.025);
+    audio.wet.gain.setTargetAtTime(next?1:0,now,.025);
+    useFilter=next;
+    liveFilter.setAttribute('aria-pressed',String(useFilter));
+    setIcon(liveFilter,'≋',useFilter?'Tắt lọc ồn':'Bật lọc ồn');
+  } catch(error) {el('ptz-status').textContent=error.message||'Không bật được lọc ồn.';}
+  finally {liveFilter.disabled=false;}
 };
 el('live-fullscreen').onclick=()=>{
   const frame=el('live-frame');
@@ -612,7 +668,7 @@ function startLive(id, keepZoom=false) {
   status.textContent = 'Đang kết nối…';
   if (!window.MediaSource) {stopStream = () => {panel.hidden = true;}; status.textContent = 'Trình duyệt này chưa hỗ trợ phát trực tiếp. Hãy thử Chrome hoặc Edge.'; return;}
   const source = new MediaSource(), objectUrl = URL.createObjectURL(source);
-  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/live/' + encodeURIComponent(id) + (useFilter?'?filtered=true':''));
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/live/' + encodeURIComponent(id));
   ws.binaryType = 'arraybuffer';
   let buffer, queue = [], codec, ended = false;
   function fail(message) {status.textContent = message; ws.close();}
