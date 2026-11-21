@@ -67,11 +67,24 @@ def export(batch):
     temporary = output.with_suffix(".working")
     output_in_container = Path("/media/frigate/camerahome-clips") / temporary.relative_to(OUTPUT)
     playlist = "".join(f"file 'file:/media/frigate/{file.relative_to(STORAGE).as_posix()}'\n" for _, file in batch)
-    cmd = ["docker", "exec", "-i", FRIGATE, "/usr/lib/ffmpeg/7.0/bin/ffmpeg", "-loglevel", "error",
-           "-y", "-protocol_whitelist", "file,pipe", "-f", "concat", "-safe", "0", "-i", "pipe:0",
-           "-c", "copy", "-t", str(CLIP_SECONDS), "-movflags", "+faststart", "-f", "mp4", str(output_in_container)]
+    ffmpeg = ["docker", "exec", "-i", FRIGATE, "timeout", "120s", "nice", "-n", "10",
+              "/usr/lib/ffmpeg/7.0/bin/ffmpeg", "-loglevel", "error", "-y", "-threads", "2",
+              "-protocol_whitelist", "file,pipe", "-f", "concat", "-safe", "0", "-i", "pipe:0"]
+    common = ["-t", str(CLIP_SECONDS), "-movflags", "+faststart", "-f", "mp4", str(output_in_container)]
+    compressed = ["-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libsvtav1", "-preset", "10",
+                  "-crf", "36", "-svtav1-params", "lp=2", "-pix_fmt", "yuv420p",
+                  "-c:a", "aac", "-b:a", "32k", "-ac", "1"]
     try:
-        subprocess.run(cmd, input=playlist, text=True, check=True, timeout=65)
+        source_bytes = sum(file.stat().st_size for _, file in batch)
+        try:
+            subprocess.run(ffmpeg + compressed + common, input=playlist, text=True,
+                           stderr=subprocess.PIPE, check=True, timeout=130)
+            use_compressed = 0 < temporary.stat().st_size < source_bytes
+        except (OSError, subprocess.SubprocessError):
+            use_compressed = False
+        if not use_compressed:
+            subprocess.run(ffmpeg + ["-c", "copy"] + common, input=playlist, text=True,
+                           stderr=subprocess.PIPE, check=True, timeout=130)
         if not temporary.stat().st_size:
             raise ValueError("empty clip")
         temporary.replace(output)
