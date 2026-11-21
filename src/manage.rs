@@ -1,6 +1,6 @@
 use crate::{camera_id, App};
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Path, Query, State},
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Extension, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{Redirect, Response},
     routing::{get, post},
@@ -19,7 +19,7 @@ fn problem(status: StatusCode, message: &'static str) -> Problem {
     (status, message)
 }
 
-fn require_origin(headers: &HeaderMap) -> Result<(), Problem> {
+pub fn require_origin(headers: &HeaderMap) -> Result<(), Problem> {
     let origin = env::var("PUBLIC_ORIGIN").unwrap_or_else(|_| "https://camera.nghi.org".into());
     if headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) != Some(origin.as_str()) {
         return Err(problem(StatusCode::FORBIDDEN, "Yêu cầu phải đến từ trang CameraHome."));
@@ -56,7 +56,7 @@ async fn add_camera(State(app): State<App>, headers: HeaderMap, Json(input): Jso
     require_origin(&headers)?;
     let subnet = env::var("CAMERA_SUBNET").unwrap_or_else(|_| "192.168.88".into());
     let address = input.ip.octets();
-    if !camera_id(&input.id) || input.id.len() > 48 || input.id.ends_with("__compact") || format!("{}.{}.{}", address[0], address[1], address[2]) != subnet
+    if !camera_id(&input.id) || input.id.len() > 48 || (input.id.ends_with("__compact") || input.id.ends_with("__1080")) || format!("{}.{}.{}", address[0], address[1], address[2]) != subnet
         || !(1..255).contains(&address[3]) || input.username.is_empty() || input.password.is_empty()
         || input.username.len() > 128 || input.password.len() > 128 {
         return Err(problem(StatusCode::BAD_REQUEST, "Kiểm tra mã camera, IP trong mạng camera và Camera Account."));
@@ -84,7 +84,7 @@ struct CameraSettings {
 #[serde(rename_all = "snake_case")]
 enum RecordingMode { Motion, Crying, Both }
 
-async fn read_config() -> Result<Value, Problem> {
+pub async fn read_config() -> Result<Value, Problem> {
     let raw = fs::read("/frigate-config/config.yml").await.map_err(|_| internal())?;
     serde_yaml::from_slice(&raw).map_err(|_| internal())
 }
@@ -109,15 +109,14 @@ fn update_settings(config: &mut Value, id: &str, url: &str, settings: CameraSett
     let go2rtc = config.as_object_mut().ok_or_else(internal)?.entry("go2rtc").or_insert_with(|| json!({}));
     let streams = object_at(go2rtc, "streams")?;
     streams.insert(id.to_owned(), json!([url, format!("ffmpeg:{id}#audio=aac")]));
-    if settings.compact {
+    {
         let location = url.split(['?', '#']).next().ok_or_else(internal)?;
         let mut substream = location.strip_suffix("/stream1").ok_or_else(internal)?.to_owned();
         substream.push_str("/stream2");
         substream.push_str(&url[location.len()..]);
-        streams.insert(compact_id.clone(), json!([substream]));
-    } else {
-        streams.remove(&compact_id);
+        streams.insert(compact_id.clone(), json!([substream, format!("ffmpeg:{compact_id}#audio=aac")]));
     }
+    streams.insert(format!("{id}__1080"),json!([format!("ffmpeg:{id}#video=h264#height=1080#audio=aac")]));
     let feed = if settings.compact { &compact_id } else { id };
     let main_path = format!("rtsp://127.0.0.1:8554/{id}");
     let record_path = format!("rtsp://127.0.0.1:8554/{feed}");
@@ -194,24 +193,37 @@ fn encode(value: &str) -> String {
     output
 }
 
-async fn live(State(app): State<App>, Path(id): Path<String>, headers: HeaderMap, ws: WebSocketUpgrade) -> Result<Response, Problem> {
+#[derive(Deserialize)]
+struct LiveQuality { quality: Option<String> }
+
+async fn live(State(app): State<App>, Extension(user): Extension<crate::accounts::Principal>, Path(id): Path<String>, Query(query): Query<LiveQuality>, headers: HeaderMap, ws: WebSocketUpgrade) -> Result<Response, Problem> {
     require_origin(&headers)?;
     if !camera_id(&id) || !app.frigate.starts_with("http://") {
         return Err(problem(StatusCode::BAD_REQUEST, "Mã camera không hợp lệ."));
     }
-    let url = format!("ws://{}/live/mse/api/ws?src={id}", &app.frigate[7..]);
-    Ok(ws.on_upgrade(move |socket| live_session(socket, url)))
+    let stream = match query.quality.as_deref() {
+        None | Some("original") => id.clone(),
+        Some("low") => format!("{id}__compact"),
+        Some("hd") => format!("{id}__1080"),
+        _ => return Err(problem(StatusCode::BAD_REQUEST, "Chất lượng không hợp lệ.")),
+    };
+    let url = format!("ws://{}/live/mse/api/ws?src={stream}", &app.frigate[7..]);
+    Ok(ws.on_upgrade(move |socket| live_session(socket, url, user, id)))
 }
 
-async fn live_session(mut socket: WebSocket, url: String) {
+async fn live_session(mut socket: WebSocket, url: String, user: crate::accounts::Principal, id: String) {
     let Ok(Ok((mut upstream, _))) = time::timeout(Duration::from_secs(8), tokio_tungstenite::connect_async(url)).await else {
         let _ = socket.send(Message::Text(r#"{"type":"error","value":"Chưa kết nối được luồng trực tiếp."}"#.into())).await;
         return;
     };
     let request = json!({"type":"mse","value":"avc1.640029,avc1.64002A,avc1.42E01E,mp4a.40.2"}).to_string();
     if upstream.send(Upstream::Text(request.into())).await.is_err() { return; }
+    let mut check = time::interval(Duration::from_secs(15));
     loop {
         tokio::select! {
+            _ = check.tick() => {
+                if !crate::accounts::still_allowed_live(&user, &id).await { break; }
+            }
             browser = socket.recv() => {
                 if !matches!(browser, Some(Ok(Message::Ping(_) | Message::Pong(_)))) { break; }
             }

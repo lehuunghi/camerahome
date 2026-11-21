@@ -48,3 +48,9 @@ Bản ghi nhẹ sử dụng RTSP stream2 do camera nén sẵn, còn phát trực
 Thanh thời gian dùng giờ Việt Nam. Chọn một camera và ngày, kéo đến một mốc hoặc mở một đoạn trong danh sách. Khi phát hết đoạn, trình phát chuyển sang đoạn kế tiếp của cùng camera. Các mức tốc độ ngoài khả năng trình duyệt dùng tua theo khung hình.
 
 Mục Dọn bản ghi cũ đếm các tệp trước 00:00 ngày đã chọn rồi yêu cầu nhập XOA. Chức năng xóa tệp MP4 trên ổ máy chủ, giữ các bản sao trên Drive. CameraHome đọc danh sách từ ổ đĩa. Chỉ mục của Frigate có thể còn hiển thị các đoạn đã xóa cho đến khi Frigate dọn chỉ mục.
+
+### Tài khoản và chất lượng trực tiếp
+
+CameraHome nhận tên người dùng từ Nginx sau HTTP Basic authentication. Đặt một chuỗi ngẫu nhiên bí mật trong `/opt/camerahome-auth/proxy-token`, gắn cả thư mục vào container tại `/nginx-auth` và buộc Nginx ghi đè các header `X-CameraHome-User` (giá trị `$remote_user`) và `X-CameraHome-Proxy` (giá trị bí mật), kể cả ở route live và OAuth. Không công bố cổng container. File `/opt/camerahome-auth/users` cần có dòng `admin` để mở Quản trị. Giữ file token và cấu hình riêng trên máy chủ.
+
+Admin cấp danh sách camera và quyền xem live, bản ghi, điều khiển xoay hoặc chỉnh cấu hình riêng. Tài khoản được khóa trong mục Quản trị. Luồng Tiết kiệm chọn stream2 còn HD 1080p sử dụng go2rtc FFmpeg trên máy chủ. Lọc ồn chỉ áp dụng trong phiên xem trực tiếp trên trình duyệt.

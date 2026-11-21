@@ -13,6 +13,7 @@ services:
       - /opt/frigate/backup-status:/backup-status:ro
       - /opt/frigate/config:/frigate-config:ro
       - /opt/camerahome-data:/app-data
+      - /opt/camerahome-auth:/nginx-auth
     networks:
       - camera_backend
 

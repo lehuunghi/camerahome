@@ -1,5 +1,6 @@
 mod manage;
-use axum::{extract::{Query, State}, http::{header, StatusCode}, response::{Html, IntoResponse}, routing::get, Json, Router};
+mod accounts;
+use axum::{extract::{Extension, Query, State}, http::{header, StatusCode}, response::{Html, IntoResponse}, routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{env, fs, path::PathBuf, time::Duration};
@@ -33,13 +34,13 @@ fn camera_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 100 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
 }
 
-async fn cameras(State(app): State<App>) -> Result<Json<Vec<Camera>>, StatusCode> {
+async fn cameras(State(app): State<App>, Extension(user): Extension<accounts::Principal>) -> Result<Json<Vec<Camera>>, StatusCode> {
     let stats: Value = app.client.get(format!("{}/api/stats", app.frigate))
         .send().await.map_err(|_| StatusCode::BAD_GATEWAY)?
         .error_for_status().map_err(|_| StatusCode::BAD_GATEWAY)?
         .json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
     let items = stats["cameras"].as_object().ok_or(StatusCode::BAD_GATEWAY)?;
-    Ok(Json(items.iter().filter(|(id, _)| camera_id(id)).map(|(id, info)| Camera {
+    Ok(Json(items.iter().filter(|(id, _)| camera_id(id) && user.has_camera(id)).map(|(id, info)| Camera {
         id: id.clone(), fps: info["camera_fps"].as_f64(),
     }).collect()))
 }
@@ -91,12 +92,16 @@ fn clips_for_day(root: PathBuf, filter: Selection) -> std::io::Result<Vec<String
     Ok(clips)
 }
 
-async fn clips(State(app): State<App>, Query(filter): Query<Selection>) -> Result<Json<Vec<String>>, StatusCode> {
+async fn clips(State(app): State<App>, Extension(user): Extension<accounts::Principal>, Query(filter): Query<Selection>) -> Result<Json<Vec<String>>, StatusCode> {
     let valid_day = valid_recording_day(&filter.day);
     if !valid_day || filter.camera.as_deref().is_some_and(|id| !camera_id(id)) {
         return Err(StatusCode::BAD_REQUEST);
     }
-    tokio::task::spawn_blocking(move || clips_for_day(app.recordings, filter))
+    tokio::task::spawn_blocking(move || {
+        let mut clips = clips_for_day(app.recordings, filter)?;
+        clips.retain(|path| path.split('/').nth(2).is_some_and(|id| user.has_camera(id)));
+        Ok::<_, std::io::Error>(clips)
+    })
         .await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .map(Json).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
@@ -143,6 +148,7 @@ async fn main() {
     tokio::spawn(manage::backup_worker(app.clone()));
     let router = Router::new()
         .merge(manage::routes())
+        .merge(accounts::routes())
         .route("/", get(|| async { Html(include_str!("../web/index.html")) }))
         .route("/api/cameras", get(cameras))
         .route("/api/snapshot/{id}", get(snapshot))
@@ -150,6 +156,7 @@ async fn main() {
         .route("/api/clips/latest/{id}", get(latest_clips))
         .route("/api/backup", get(backup))
         .nest_service("/media", ServeDir::new(&app.recordings))
+        .layer(axum::middleware::from_fn(accounts::authorize))
         .with_state(app);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.expect("listen");
     axum::serve(listener, router).await.expect("serve");
