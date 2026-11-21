@@ -142,7 +142,7 @@ video { border:0; }
 </style></head>
 <body>
 <header><div class="shell header-row"><div class="brand"><span aria-hidden="true" class="brand-icon"></span>CameraHome</div>
-<nav aria-label="Điều hướng chính"><a href="#live" data-view="live" aria-current="page">Trực tiếp</a><a href="#recordings" data-view="recordings">Xem lại</a><a href="#add" data-view="admin">Quản trị</a></nav><button id="logout" type="button" hidden>Đăng xuất</button></div></header>
+<nav aria-label="Điều hướng chính"><a href="#live" data-view="live" aria-current="page">Trực tiếp</a><a href="#recordings" data-view="recordings">Xem lại</a><a href="#add" data-view="admin">Quản trị</a></nav></div></header>
 <main class="shell">
 <div id="view-live">
 <div class="view-heading"><div><h1>Trực tiếp</h1><p id="connection" class="bar" role="status">Đang kết nối camera…</p></div><button id="refresh">Làm mới</button></div>
@@ -203,7 +203,7 @@ video { border:0; }
 <button class="accent" type="submit">Kết nối Google Drive</button>
 </form><p id="drive-result" role="status"></p></section>
 <section class="panel" id="accounts-panel" hidden><h2>Tài khoản và quyền</h2>
-<p class="notice">Chọn tài khoản để đổi mật khẩu, khóa hoặc sửa quyền. Tài khoản admin có toàn quyền và có thể đổi mật khẩu.</p>
+<p class="notice">Chọn tài khoản để đổi mật khẩu, khóa hoặc sửa quyền. Tài khoản admin có toàn quyền hệ thống.</p>
 <ul id="account-list" class="clip-list"></ul>
 <form id="account-form">
 <label>Tên đăng nhập <input name="user" required maxlength="32" pattern="[A-Za-z0-9_\-]{1,32}" autocomplete="off"></label>
@@ -225,7 +225,7 @@ function setIcon(button, glyph, label) {
   button.title=label;
 }
 const buttonIcons={
-  refresh:['↻','Làm mới'], logout:['⇥','Đăng xuất'], 'live-reconnect':['↻','Kết nối lại'], 'settings-reconnect':['↻','Kết nối lại'], 'settings-delete':['⌫','Xóa camera'], 'stop-live':['×','Đóng luồng'], 'live-sound':['◖×','Bật tiếng live'],
+  refresh:['↻','Làm mới'], 'live-reconnect':['↻','Kết nối lại'], 'settings-reconnect':['↻','Kết nối lại'], 'settings-delete':['⌫','Xóa camera'], 'stop-live':['×','Đóng luồng'], 'live-sound':['◖×','Bật tiếng live'],
   'live-filter':['≋','Bật lọc ồn'], 'live-fullscreen':['⛶','Toàn màn hình'],
   'prev-clip':['⏮','Đoạn trước'], 'toggle-replay':['▶','Phát'], 'next-clip':['⏭','Đoạn sau'],
   'mute-replay':['◖))','Tắt tiếng bản ghi'], 'cleanup-preview':['⌕','Kiểm tra số đoạn'],
@@ -834,9 +834,6 @@ function renderAccountCameras(checked) {
 }
 function editAccount(account) {
   accountForm.reset();
-  const protectedAdmin=Boolean(account?.admin);
-  accountForm.querySelectorAll('fieldset').forEach(field=>field.disabled=protectedAdmin);
-  accountForm.elements.enabled.disabled=protectedAdmin;
   accountForm.elements.user.removeAttribute('readonly');
   if (account) {
     accountForm.elements.user.value=account.user;
@@ -845,7 +842,7 @@ function editAccount(account) {
     for (const key of ['live','recordings','ptz','settings']) accountForm.elements[key].checked=account.access[key];
   }
   renderAccountCameras(account?.access.cameras||[]);
-  accountForm.elements.password.required=!account || protectedAdmin;
+  accountForm.elements.password.required=!account;
   (account?accountForm.elements.password:accountForm.elements.user).focus();
 }
 async function accountsList() {
@@ -854,7 +851,7 @@ async function accountsList() {
     el('account-list').replaceChildren(...accounts.map(account=>{
       const row=document.createElement('li'),button=document.createElement('button');
       button.textContent=account.user+' · '+(account.admin?'Quản trị toàn hệ thống':account.enabled?account.access.cameras.length+' camera':'Đã khóa hoặc chưa cấp quyền');
-      button.onclick=()=>editAccount(account);row.append(button);return row;
+      button.onclick=()=>editAccount(account);button.disabled=Boolean(account.admin);row.append(button);return row;
     }));
   } catch {el('account-status').textContent='Không tải được danh sách tài khoản.';}
 }
@@ -869,14 +866,13 @@ accountForm.onsubmit=async event=>{
     const response=await fetch('/api/accounts',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({user:fields.user.value,password:fields.password.value,enabled:fields.enabled.checked,access})});
     if (!response.ok) throw new Error(await response.text());
-    fields.password.value='';if(fields.user.value==='admin'){location.replace('/login');return;} el('account-status').textContent='Đã lưu tài khoản và quyền.';await accountsList();
+    fields.password.value='';el('account-status').textContent='Đã lưu tài khoản và quyền.';await accountsList();
   } catch(error) {el('account-status').textContent=error.message;}
   finally {button.disabled=false;}
 };
 async function initializePage(){
   try {session=await read('/api/session');}
-  catch {location.replace('/login');return;}
-  el('logout').hidden=false;
+  catch {el('connection').textContent='Không xác thực được tài khoản CameraHome.';return;}
   for (const link of nav) {
     link.hidden=link.dataset.view==='recordings'&&!allowed('recordings') || link.dataset.view==='admin'&&!allowed('settings');
   }
@@ -890,15 +886,5 @@ async function initializePage(){
   if (currentView!=='live') refresh();
   setInterval(refresh,30000);
 }
-el('logout').onclick=async()=>{
-  const button=el('logout');
-  button.disabled=true;
-  try {
-    const response=await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
-    if (!response.ok) throw new Error();
-    stopStream();stopReplay();location.replace('/login');
-  } catch {button.disabled=false;window.alert('Chưa đăng xuất được. Vui lòng thử lại.');}
-};
-window.addEventListener('pageshow',event=>{if(event.persisted) location.reload();});
 initializePage();
 </script></body></html>

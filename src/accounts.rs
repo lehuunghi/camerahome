@@ -1,15 +1,15 @@
 use crate::{camera_id, App};
 use axum::{
     extract::{Extension, Request, State},
-    http::{header, HeaderMap, Method, StatusCode},
+    http::{Method, StatusCode},
     middleware::Next,
-    response::{Html, IntoResponse, Redirect, Response},
-    routing::{get, post},
+    response::{IntoResponse, Response},
+    routing::get,
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{collections::BTreeMap, os::unix::fs::{MetadataExt, PermissionsExt}, path::Path, process::Stdio, sync::LazyLock, time::{Duration, Instant}};
+use std::{collections::BTreeMap, os::unix::fs::{MetadataExt, PermissionsExt}, path::Path, process::Stdio, time::Duration};
 use tokio::{fs, io::AsyncWriteExt, process::Command};
 const USERS: &str = "/nginx-auth/users";
 const POLICY: &str = "/nginx-auth/accounts.json";
@@ -27,7 +27,6 @@ pub struct Access {
 #[derive(Clone)]
 pub struct Principal {
     user: String,
-    session_id: Option<String>,
     pub admin: bool,
     pub access: Access,
 }
@@ -63,9 +62,6 @@ async fn directory() -> Result<Directory, Problem> {
 pub fn routes() -> Router<App> {
     Router::new()
         .route("/api/session", get(session))
-        .route("/login", get(login_page))
-        .route("/api/login", post(login))
-        .route("/api/logout", post(logout))
         .route("/api/accounts", get(list).post(save))
 }
 
@@ -73,32 +69,24 @@ pub async fn authorize(mut request: Request, next: Next) -> Response {
     let headers = request.headers();
     let token = fs::read_to_string(TOKEN).await.unwrap_or_default();
     let supplied = headers.get("x-camerahome-proxy").and_then(|h| h.to_str().ok());
-    let expected = token.trim();
-    if expected.len() < 32 || !supplied.is_some_and(|value| equal(value,expected)) {
-        return StatusCode::UNAUTHORIZED.into_response();
+    let user = headers.get("x-camerahome-user").and_then(|h| h.to_str().ok()).unwrap_or("");
+    let expected = token.trim().as_bytes();
+    let constant_match = supplied.is_some_and(|value| value.len()==expected.len() && value.bytes().zip(expected)
+        .fold(0u8,|difference,(a,b)| difference | (a ^ *b))==0);
+    if expected.len() < 32 || !constant_match || !valid_user(user) {
+        return (StatusCode::UNAUTHORIZED, "Cần đăng nhập CameraHome.").into_response();
     }
-    let path = request.extensions().get::<axum::extract::OriginalUri>()
-        .map_or_else(|| request.uri().path(), |original| original.0.path());
-    if matches!((request.method().as_str(),path),("GET","/login")|("POST","/api/login")|("POST","/api/logout")) {
-        return next.run(request).await;
-    }
-    let sid = session_cookie(headers);
-    let logged = if let Some(id) = &sid { session_user(id).await } else { None };
-    let trusted = headers.get("x-camerahome-user").and_then(|h| h.to_str().ok()).filter(|v| valid_user(v));
-    let user = logged.as_deref().or(trusted);
-    let Some(user) = user else {
-        return if path=="/" && request.method()==Method::GET { Redirect::to("/login").into_response() }
-        else { (StatusCode::UNAUTHORIZED,"Cần đăng nhập CameraHome.").into_response() };
-    };
     let principal = if user == "admin" {
-        Principal {user: user.to_owned(),session_id: sid.clone().filter(|_|logged.is_some()),admin: true,access: Access::default()}
+        Principal {user: user.to_owned(),admin: true,access: Access::default()}
     } else {
         let Ok(accounts) = directory().await else { return internal().into_response(); };
         let Some(account) = accounts.get(user).filter(|a| a.enabled) else {
             return (StatusCode::FORBIDDEN, "Tài khoản chưa được cấp quyền.").into_response();
         };
-        Principal {user: user.to_owned(),session_id: sid.clone().filter(|_|logged.is_some()),admin: false,access: account.access.clone()}
+        Principal {user: user.to_owned(),admin: false,access: account.access.clone()}
     };
+    let path = request.extensions().get::<axum::extract::OriginalUri>()
+        .map_or_else(|| request.uri().path(), |original| original.0.path());
     if !permits(&principal, request.method(), path) {
         return (StatusCode::FORBIDDEN, "Tài khoản không có quyền thực hiện thao tác này.").into_response();
     }
@@ -136,82 +124,12 @@ fn permits(p: &Principal, method: &Method, path: &str) -> bool {
 }
 
 pub async fn still_allowed_live(principal: &Principal, id: &str) -> bool {
-    if let Some(id)=&principal.session_id {
-        if session_user(id).await.as_deref()!=Some(principal.user.as_str()) {return false;}
-    }
     principal.admin || directory().await.is_ok_and(|accounts| accounts.get(&principal.user)
         .is_some_and(|account| account.enabled && account.access.live && account.access.cameras.iter().any(|camera| camera == id)))
 }
 
 async fn session(Extension(user): Extension<Principal>) -> Json<Value> {
     Json(json!({"user":user.user,"admin":user.admin,"access":user.access}))
-}
-
-type Sessions = BTreeMap<String,(String,Instant)>;
-static SESSIONS: LazyLock<tokio::sync::Mutex<Sessions>> = LazyLock::new(Default::default);
-static ATTEMPTS: LazyLock<tokio::sync::Mutex<BTreeMap<String,(Instant,u8)>>> = LazyLock::new(Default::default);
-static VERIFY: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
-const COOKIE: &str = "__Host-camerahome";
-const SESSION_TTL: u64 = 43200;
-
-fn equal(a:&str,b:&str)->bool {
-    a.len()==b.len() && a.bytes().zip(b.bytes()).fold(0u8,|diff,(x,y)|diff|(x^y))==0
-}
-fn session_cookie(headers:&HeaderMap)->Option<String> {
-    headers.get(header::COOKIE)?.to_str().ok()?.split(';').find_map(|part| {
-        let (key,v)=part.trim().split_once('=')?;
-        (key==COOKIE && v.len()==64 && v.bytes().all(|c|c.is_ascii_hexdigit())).then(||v.to_owned())
-    })
-}
-async fn session_user(id:&str)->Option<String> {
-    SESSIONS.lock().await.get(id).filter(|(_,expiry)|*expiry>Instant::now()).map(|(name,_)|name.clone())
-}
-async fn revoke(user:&str) {
-    SESSIONS.lock().await.retain(|_,(name,_)|name!=user);
-}
-async fn login_page() -> impl IntoResponse {
-    ([(header::CACHE_CONTROL,"no-store")],Html(include_str!("../web/login.html")))
-}
-#[derive(Deserialize)]
-struct Login {user:String,password:String}
-
-async fn login(headers:HeaderMap,Json(data):Json<Login>)->Result<Response,Problem> {
-    crate::manage::require_origin(&headers)?;
-    let bad=(StatusCode::UNAUTHORIZED,"Tên tài khoản hoặc mật khẩu không đúng.");
-    if !valid_user(&data.user) || data.password.is_empty() || data.password.len()>128 || data.password.chars().any(char::is_control) {return Err(bad);}
-    let now=Instant::now();
-    let ip=headers.get("x-camerahome-client").and_then(|v|v.to_str().ok()).unwrap_or("local").to_owned();
-    {
-        let mut attempts=ATTEMPTS.lock().await;
-        attempts.retain(|_,(at,_)|now.duration_since(*at)<Duration::from_secs(60));
-        if attempts.len()>=4096 && !attempts.contains_key(&ip) {return Err((StatusCode::TOO_MANY_REQUESTS,"Thử lại sau."));}
-        let entry=attempts.entry(ip).or_insert((now,0));
-        if entry.1>=12 {return Err((StatusCode::TOO_MANY_REQUESTS,"Bạn đã thử quá nhiều lần. Hãy đợi một phút."));}
-        entry.1+=1;
-    }
-    let _slot=VERIFY.try_acquire().map_err(|_|(StatusCode::TOO_MANY_REQUESTS,"Thử lại sau."))?;
-    let users=fs::read_to_string(USERS).await.map_err(|_|internal())?;
-    let hash=users.lines().filter_map(|line|line.split_once(':')).find(|(name,_)|*name==data.user).map(|(_,hash)|hash);
-    let enabled=data.user=="admin" || directory().await?.get(&data.user).is_some_and(|entry|entry.enabled);
-    let salt=hash.and_then(|value|value.strip_prefix("$6$")?.split_once('$')).map(|(salt,_)|salt);
-    let computed=hash_with_salt(&data.password,Some(salt.unwrap_or("camerahomeDummy"))).await?;
-    if !enabled || !hash.is_some_and(|expected|equal(expected,&computed)) {return Err(bad);}
-    let mut bytes=[0u8;32];getrandom::fill(&mut bytes).map_err(|_|internal())?;
-    let id=bytes.iter().map(|v|format!("{v:02x}")).collect::<String>();
-    let mut sessions=SESSIONS.lock().await;
-    sessions.retain(|_,(_,expiry)|*expiry>now);
-    if let Some(old)=session_cookie(&headers) {sessions.remove(&old);}
-    if sessions.len()>=4096 {return Err((StatusCode::SERVICE_UNAVAILABLE,"Thử lại sau."));}
-    sessions.insert(id.clone(),(data.user,now+Duration::from_secs(SESSION_TTL)));
-    let cookie=format!("{COOKIE}={id}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age={SESSION_TTL}");
-    Ok(([(header::SET_COOKIE,cookie),(header::CACHE_CONTROL,"no-store".to_owned())],StatusCode::NO_CONTENT).into_response())
-}
-
-async fn logout(headers:HeaderMap)->Result<Response,Problem> {
-    crate::manage::require_origin(&headers)?;
-    if let Some(id)=session_cookie(&headers) {SESSIONS.lock().await.remove(&id);}
-    let expired=format!("{COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0");
-    Ok(([(header::SET_COOKIE,expired),(header::CACHE_CONTROL,"no-store".to_owned())],StatusCode::NO_CONTENT).into_response())
 }
 
 async fn list() -> Result<Json<Value>, Problem> {
@@ -241,13 +159,9 @@ fn valid_user(user: &str) -> bool {
     (1..=32).contains(&user.len()) && user.bytes().all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c))
 }
 
-async fn hash_password(password: &str) -> Result<String, Problem> {hash_with_salt(password,None).await}
-
-async fn hash_with_salt(password:&str,salt:Option<&str>)->Result<String,Problem> {
-    let mut command=Command::new("openssl");
-    command.args(["passwd","-6","-stdin"]);
-    if let Some(salt)=salt {command.args(["-salt",salt]);}
-    let mut child=command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn().map_err(|_| internal())?;
+async fn hash_password(password: &str) -> Result<String, Problem> {
+    let mut child = Command::new("openssl").args(["passwd","-6","-stdin"])
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).spawn().map_err(|_| internal())?;
     let mut input = child.stdin.take().ok_or_else(internal)?;
     input.write_all(format!("{password}\n").as_bytes()).await.map_err(|_| internal())?;
     drop(input);
@@ -269,23 +183,12 @@ async fn atomic_write(path: &str, value: &[u8], mode: u32, group: Option<u32>) -
 async fn save(State(app): State<App>, headers: axum::http::HeaderMap, Json(mut data): Json<Update>) -> Result<StatusCode, Problem> {
     crate::manage::require_origin(&headers)?;
     let bad = || (StatusCode::BAD_REQUEST, "Kiểm tra tên tài khoản, mật khẩu và quyền camera.");
-    if !valid_user(&data.user) || data.access.cameras.len() > 100
+    if !valid_user(&data.user) || data.user == "admin" || data.access.cameras.len() > 100
         || data.access.cameras.iter().any(|id| !camera_id(id))
         || (!data.password.is_empty() && (!(12..=128).contains(&data.password.len()) || data.password.chars().any(char::is_control))) {
         return Err(bad());
     }
     let _lock = app.management.lock().await;
-    if data.user=="admin" {
-        if data.password.is_empty() {return Err(bad());}
-        let original=fs::read_to_string(USERS).await.map_err(|_|internal())?;
-        let group=fs::metadata(USERS).await.map_err(|_|internal())?.gid();
-        let hash=hash_password(&data.password).await?;
-        let mut updated=format!("admin:{hash}\n");
-        for line in original.lines().filter(|line|!line.starts_with("admin:")) {updated.push_str(line);updated.push('\n');}
-        atomic_write(USERS,updated.as_bytes(),0o640,Some(group)).await?;
-        revoke("admin").await;
-        return Ok(StatusCode::NO_CONTENT);
-    }
     let cfg = crate::manage::read_config().await?;
     if data.access.cameras.iter().any(|id| cfg["cameras"].get(id).is_none()) { return Err(bad()); }
     data.access.cameras.sort_unstable();
@@ -296,18 +199,11 @@ async fn save(State(app): State<App>, headers: axum::http::HeaderMap, Json(mut d
     let hash = if data.password.is_empty() {
         accounts.get(&data.user).ok_or_else(bad)?.hash.clone()
     } else { hash_password(&data.password).await? };
-    let invalidate=!data.password.is_empty() || !data.enabled;
-    let username=data.user.clone();
     accounts.insert(data.user,Account {enabled:data.enabled,access:data.access,hash});
     let original = fs::read_to_string(USERS).await.map_err(|_| internal())?;
     let group = fs::metadata(USERS).await.map_err(|_| internal())?.gid();
     let admin = original.lines().find(|line| line.starts_with("admin:")).ok_or_else(internal)?;
     let mut credentials = format!("{admin}\n");
-    for line in original.lines() {
-        if let Some((name,_))=line.split_once(':') {
-            if name!="admin" && valid_user(name) && !accounts.contains_key(name) {credentials.push_str(line);credentials.push('\n');}
-        }
-    }
     for (id,account) in &accounts {
         if account.enabled { credentials.push_str(&format!("{id}:{}\n",account.hash)); }
     }
@@ -316,6 +212,5 @@ async fn save(State(app): State<App>, headers: axum::http::HeaderMap, Json(mut d
         let _ = atomic_write(POLICY,&previous,0o600,None).await;
         return Err(error);
     }
-    if invalidate {revoke(&username).await;}
     Ok(StatusCode::NO_CONTENT)
 }
