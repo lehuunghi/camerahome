@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="vi"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Đăng nhập · CameraHome</title>
+<style>*{box-sizing:border-box}body{margin:0;display:grid;min-height:100vh;place-items:center;padding:20px;background:#f1f6f4;color:#142b26;font:16px system-ui,sans-serif}main{width:min(100%,380px);background:#fff;border-radius:5px;padding:26px}h1{margin:0 0 20px}label{display:grid;gap:6px;margin:12px 0}input,button{font:inherit;padding:10px 12px;border:1px solid #d9e5df;border-radius:5px}button{background:#126d57;color:white;width:100%;cursor:pointer}p{color:#963324}</style>
+<main><h1>CameraHome</h1><form id="login"><label>Tài khoản <input name="user" required maxlength="32" autocomplete="username"></label><label>Mật khẩu <input name="password" type="password" required maxlength="128" autocomplete="current-password"></label><button type="submit">Đăng nhập</button><p role="status" id="message"></p></form></main>
+<script>
+const form=document.getElementById('login'),message=document.getElementById('message'),button=form.querySelector('button');
+form.onsubmit=async event=>{
+  event.preventDefault();button.disabled=true;message.textContent='';
+  try {
+    const response=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(form)))});
+    if(!response.ok) throw new Error(await response.text());
+    location.replace('/');
+  } catch(error) {message.textContent=error.message||'Không đăng nhập được.';}
+  finally {button.disabled=false;}
+};
+</script></html>
