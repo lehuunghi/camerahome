@@ -1,0 +1,10 @@
+[Unit]
+Description=Finalize CameraHome event clips
+
+[Timer]
+OnBootSec=20s
+OnUnitInactiveSec=15s
+AccuracySec=3s
+
+[Install]
+WantedBy=timers.target
