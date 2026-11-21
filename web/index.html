@@ -3,8 +3,9 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CameraHome</title>
 <style>
-:root{color-scheme:dark;--ink:#eef4fa;--muted:#a5b7c9;--panel:#142031;--line:#2c3e53;--mint:#76e8bd}*{box-sizing:border-box}body{margin:0;background:#0b1420;color:var(--ink);font:16px system-ui,sans-serif}header{border-bottom:1px solid var(--line);background:#101b29}header div,main{max-width:1240px;margin:auto;padding:22px 28px}header strong{color:var(--mint);font-size:22px}main{padding-top:34px}h1{margin:0;font-size:clamp(2rem,4vw,3rem);letter-spacing:-.04em}h2{font-size:1.25rem;margin:0 0 14px}.bar,.title,.card>div,.filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.title,.card>div{justify-content:space-between}.sub{color:var(--muted);margin:8px 0 20px}.bar{color:var(--muted);margin:0 0 26px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,265px),1fr));gap:16px}.card,section.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}.card img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#233246;color:var(--muted)}.card>div{padding:14px}.online{color:var(--mint)}.panel{padding:20px;margin-top:26px}button,input,select{font:inherit;padding:8px 12px;border-radius:8px;color:var(--ink);background:#1d3045;border:1px solid #3c5269}button{cursor:pointer}button:hover{border-color:var(--mint)}.filters{margin-bottom:14px}video{width:min(100%,760px);display:block;margin:10px 0;max-height:430px}video[hidden]{display:none}ul{list-style:none;padding:0;margin:0;max-height:380px;overflow:auto}li{padding:7px 0;border-bottom:1px solid var(--line)}li button{width:100%;text-align:left}#backup{white-space:pre-wrap}
+:root{color-scheme:dark;--ink:#eef4fa;--muted:#a5b7c9;--panel:#142031;--line:#2c3e53;--mint:#76e8bd}*{box-sizing:border-box}body{margin:0;background:#0b1420;color:var(--ink);font:16px system-ui,sans-serif}header{border-bottom:1px solid var(--line);background:#101b29}header div,main{max-width:1240px;margin:auto;padding:22px 28px}header strong{color:var(--mint);font-size:22px}main{padding-top:34px}h1{margin:0;font-size:clamp(2rem,4vw,3rem);letter-spacing:-.04em}h2{font-size:1.25rem;margin:0 0 14px}.bar,.title,.card>div,.filters{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.title,.card>div{justify-content:space-between}.sub{color:var(--muted);margin:8px 0 20px}.bar{color:var(--muted);margin:0 0 26px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,265px),1fr));gap:16px}.card,section.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}.card img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#233246;color:var(--muted)}.card>div{padding:14px}.online{color:var(--mint)}.panel{padding:20px;margin-top:26px}button,input,select{font:inherit;padding:8px 12px;border-radius:8px;color:var(--ink);background:#1d3045;border:1px solid #3c5269}button{cursor:pointer}button:hover{border-color:var(--mint)}.filters{margin-bottom:14px}[hidden]{display:none!important}video{width:min(100%,760px);display:block;margin:10px 0;max-height:430px}video[hidden]{display:none}ul{list-style:none;padding:0;margin:0;max-height:380px;overflow:auto}li{padding:7px 0;border-bottom:1px solid var(--line)}li button{width:100%;text-align:left}#backup{white-space:pre-wrap}
 nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted);text-decoration:none}nav a:hover{color:var(--mint)}form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px;align-items:end}form label{display:grid;gap:6px}form input{width:100%;min-width:0}.accent{background:var(--mint);color:#10241f;font-weight:700;border-color:transparent}.notice{color:var(--muted);line-height:1.5}code{overflow-wrap:anywhere}section{scroll-margin-top:16px}.camera-preview{display:block;width:100%;border:0;border-radius:0;padding:0}.actions{display:flex;gap:8px;flex-wrap:wrap;padding:0 14px 14px}.actions button{flex:1}.check{display:flex;align-items:center;gap:8px}.check input{width:auto}.layout{display:grid;gap:20px}@media(min-width:980px){.layout{grid-template-columns:1fr 1fr}.layout video{margin-left:auto;margin-right:auto}}.layout .panel{min-width:0}.panel video{background:#0b1420}.card .actions{justify-content:start}
+.timeline-track{height:10px;position:relative;background:#26374a;border-radius:999px;overflow:hidden;margin-top:10px}.timeline-track i{position:absolute;height:100%;background:var(--mint);min-width:2px}.timeline-input{width:100%;padding:0;accent-color:var(--mint)}.timeline-times{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums;color:var(--muted)}.playback-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}.active-clip{border-color:var(--mint)}.danger{color:#ffb5b0;border-color:#c46f6c}#cleanup{margin-top:18px}.clip-list{max-height:360px;overflow:auto}
 </style></head>
 <body><header><div><strong>CameraHome</strong><nav><a href="#cameras">Camera</a><a href="#add">Thêm camera</a><a href="#recordings">Bản ghi</a><a href="#drive">Google Drive</a></nav></div></header><main>
 <div class="title"><h1>Camera nhà bạn</h1><button id="refresh">Làm mới</button></div>
@@ -12,7 +13,21 @@ nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted
 <p id="connection" class="bar" role="status">Đang lấy trạng thái Frigate…</p>
 <div id="cameras" class="grid"></div>
 <div class="layout"><section class="panel" id="live" hidden><div class="title"><h2 id="live-title">Xem trực tiếp</h2><button id="stop-live">Đóng luồng</button></div><video id="live-video" controls muted autoplay playsinline></video><p id="live-state" role="status"></p></section>
-<section class="panel" id="recordings"><h2 id="recordings-title">Bản ghi</h2><div class="filters"><label>Ngày UTC <input id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div><video id="player" controls playsinline hidden></video><p id="results" role="status"></p><ul id="clips"></ul></section></div>
+<section class="panel" id="recordings"><h2 id="recordings-title">Xem lại</h2>
+<div class="filters"><label>Ngày Việt Nam <input id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
+<video id="player" playsinline hidden></video>
+<div class="timeline-track" id="timeline-marks" aria-hidden="true"></div>
+<input aria-label="Kéo tới thời gian trong ngày" class="timeline-input" id="timeline" type="range" min="0" max="86399" value="0" step="1" disabled>
+<div class="timeline-times"><span>00:00</span><output id="timeline-time">00:00:00</output><span>24:00</span></div>
+<div class="playback-controls"><button id="prev-clip" disabled>Đoạn trước</button><button id="toggle-replay" disabled>Phát</button><button id="next-clip" disabled>Đoạn sau</button>
+<label>Tốc độ <select id="speed"><option value="0.05">Chậm 20×</option><option value="0.1">Chậm 10×</option><option value="0.1666666667">Chậm 6×</option><option value="0.25">Chậm 4×</option><option value="0.5">Chậm 2×</option><option value="1" selected>1×</option><option value="2">Nhanh 2×</option><option value="4">Nhanh 4×</option><option value="6">Nhanh 6×</option><option value="10">Nhanh 10×</option><option value="20">Nhanh 20×</option></select></label>
+<button id="mute-replay" type="button">Tắt tiếng</button></div>
+<p id="results" role="status"></p><p id="playback-state" class="notice" role="status"></p><ul id="clips" class="clip-list"></ul>
+<details id="cleanup"><summary>Dọn bản ghi cũ</summary><p class="notice">Xóa clip trên máy chủ của tất cả camera trước 00:00 ngày đã chọn, theo giờ Việt Nam. Bản sao Google Drive giữ nguyên.</p>
+<div class="filters"><label>Xóa trước ngày <input id="cleanup-day" type="date"></label><button id="cleanup-preview">Kiểm tra số đoạn</button></div>
+<div class="filters" id="cleanup-confirm" hidden><label>Nhập XOA <input id="cleanup-code" autocomplete="off"></label><button class="danger" id="cleanup-delete">Xóa vĩnh viễn</button></div>
+<p id="cleanup-status" role="status"></p></details>
+</section></div>
 <section class="panel" id="add"><h2>Quản trị camera</h2><h3>Thêm camera Tapo</h3><p class="notice">Camera cần ở mạng 192.168.88.x và hỗ trợ RTSP. Dùng Camera Account được tạo trong cài đặt nâng cao của app Tapo.</p>
 <form id="camera-form">
 <label>Mã camera <input name="id" placeholder="tapo_88_9" pattern="[A-Za-z0-9_\-]{1,48}" required maxlength="48"></label>
@@ -39,7 +54,11 @@ nav{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px}nav a{color:var(--muted
 </main><script>
 const el = id => document.getElementById(id);
 const day = el('day'), filter = el('filter'), player = el('player');
-day.value = new Date().toISOString().slice(0,10);
+const dayMs = 86400000, vietnamOffset = 7 * 3600000;
+const today = new Date(Date.now() + vietnamOffset).toISOString().slice(0,10);
+day.value = today;
+el('cleanup-day').value = today;
+el('cleanup-day').max = today;
 let requestId = 0;
 let autoLive = true;
 async function read(path, type = 'json') {
@@ -78,55 +97,181 @@ async function cameras() {
     el('cameras').replaceChildren();
   }
 }
-async function clips() {
-  const current = ++requestId;
-  const query = new URLSearchParams({day:day.value});
-  if (filter.value) query.set('camera',filter.value);
-  try {
-    const list = await read('/api/clips?' + query);
-    if (current !== requestId) return;
-    showClips(list);
-  } catch {
-    if (current !== requestId) return;
-    el('clips').replaceChildren();
-    el('results').textContent = 'Không tải được danh sách bản ghi.';
-  }
+const timeline = el('timeline'), speed = el('speed');
+let rows = [], activePath = '', queuedSeek = 0, playing = false, stepped = false, cursor = 0;
+let dragging = false, lastTick = 0;
+const fmt = seconds => [Math.floor(seconds/3600),Math.floor(seconds/60)%60,Math.floor(seconds)%60].map(x=>String(x).padStart(2,'0')).join(':');
+const dayStart = date => Date.parse(date + 'T00:00:00+07:00');
+function timestamp(path) {
+  const [date,hour,,name] = path.split('/');
+  const [minute,second] = name.split('.');
+  return Date.parse(date + 'T' + hour + ':' + minute + ':' + second + 'Z');
 }
-function playClip(path) {
-  player.src = '/media/' + path.split('/').map(encodeURIComponent).join('/');
+function mediaUrl(path) {return '/media/' + path.split('/').map(encodeURIComponent).join('/');}
+function active() {return rows.find(row => row.path === activePath);}
+function playlist() {
+  const camera = active()?.camera || filter.value;
+  return camera ? rows.filter(row => row.camera === camera) : rows;
+}
+function setClock(at) {
+  const second = Math.max(0,Math.min(86399,at));
+  if (!dragging) timeline.value = second;
+  if (!dragging) el('timeline-time').textContent = fmt(second);
+}
+function updateButtons() {
+  const seq = playlist(), index = seq.findIndex(row => row.path === activePath);
+  el('toggle-replay').textContent = playing ? 'Tạm dừng' : 'Phát';
+  el('toggle-replay').disabled = !rows.length;
+  el('prev-clip').disabled = index <= 0;
+  el('next-clip').disabled = !seq.length || index === seq.length - 1;
+  el('clips').querySelectorAll('button').forEach(button => button.classList.toggle('active-clip',button.dataset.path === activePath));
+}
+function stopReplay() {playing = false; player.pause(); updateButtons();}
+function resetReplay() {
+  stopReplay(); activePath = ''; player.removeAttribute('src'); player.load(); player.hidden = true;
+  el('playback-state').textContent = '';
+}
+function applyRate() {
+  const rate = Number(speed.value);
+  stepped = false;
+  try {player.playbackRate = rate; stepped = Math.abs(player.playbackRate-rate) > .001;}
+  catch {stepped = true;}
+  if (stepped) {cursor = player.currentTime; lastTick = performance.now(); player.pause();}
+  if (playing && !stepped) player.play().catch(() => {playing = false; updateButtons(); el('playback-state').textContent = 'Bấm Phát để tiếp tục xem.';});
+  el('playback-state').textContent = stepped ? 'Tốc độ này dùng tua theo khung hình trên trình duyệt hiện tại.' : '';
+}
+function playClip(path, offset=0, autoplay=true) {
+  const row = rows.find(item => item.path === path);
+  if (!row) return;
+  playing = autoplay;
+  queuedSeek = offset;
+  activePath = path;
   player.hidden = false;
-  player.play().catch(() => {});
+  setClock(row.second+offset);
+  player.src = mediaUrl(path);
+  updateButtons();
 }
+function advance(direction=1) {
+  const seq = playlist(), index=seq.findIndex(row => row.path === activePath);
+  const next=seq[index+direction];
+  if (next) playClip(next.path,0,playing || index<0);
+  else stopReplay();
+}
+player.addEventListener('loadedmetadata',() => {
+  const row = active();
+  if (row && Number.isFinite(player.duration)) row.duration = player.duration;
+  player.currentTime = Math.min(queuedSeek, Math.max(0, player.duration-.03));
+  applyRate();
+});
+player.addEventListener('timeupdate',() => {const row=active(); if(row) setClock(row.second+player.currentTime);});
+player.addEventListener('ended',() => advance());
+player.addEventListener('error',() => {
+  if (!activePath) return;
+  if (playing && playlist().some(row => row.second > (active()?.second ?? 86400))) advance();
+  else {stopReplay();el('playback-state').textContent = 'Không phát được đoạn này. Bản ghi có thể đã bị dọn.';}
+});
+setInterval(() => {
+  if (!stepped || !playing || player.readyState < 2) return;
+  const now = performance.now(); cursor += Math.min(350,now-lastTick)/1000*Number(speed.value); lastTick = now;
+  if (cursor >= player.duration) advance();
+  else if (!player.seeking && Math.abs(player.currentTime-cursor) >= .04) player.currentTime = cursor;
+},100);
+el('toggle-replay').onclick = () => {
+  if (playing) stopReplay();
+  else if (!activePath && rows.length) playClip(rows[0].path);
+  else {playing=true; applyRate(); updateButtons();}
+};
+el('prev-clip').onclick = () => advance(-1);
+el('next-clip').onclick = () => advance(1);
+el('mute-replay').onclick = () => {player.muted=!player.muted;el('mute-replay').textContent=player.muted?'Bật tiếng':'Tắt tiếng';};
+speed.onchange = () => {if(activePath) applyRate();};
+timeline.oninput = () => {dragging=true;el('timeline-time').textContent=fmt(Number(timeline.value));};
+timeline.onchange = () => {
+  dragging=false;
+  const at = Number(timeline.value), seq=playlist();
+  const row = seq.find(item => item.second <= at && at < item.second+item.duration) || seq.find(item => item.second >= at) || seq.at(-1);
+  if (row) playClip(row.path,at >= row.second && at < row.second+row.duration ? at-row.second : 0,true);
+};
 function showClips(list) {
-  el('results').textContent = list.length ? list.length + ' đoạn gần nhất' : 'Chưa có bản ghi.';
-  el('clips').replaceChildren(...list.map(path => {
-    const item = document.createElement('li'), button = document.createElement('button');
-    const [,hour,camera,file] = path.split('/');
-    button.textContent = camera + ' · ' + hour + ':' + file.slice(0,5).replace('.',':') + ' UTC';
-    button.onclick = () => playClip(path);
-    item.append(button); return item;
+  const start = dayStart(day.value);
+  const previous = new Map(rows.map(row => [row.path,row.duration]));
+  rows = [...new Set(list)].map(path => ({path,camera:path.split('/')[2],second:(timestamp(path)-start)/1000,duration:previous.get(path)||10}))
+    .filter(row => row.second>=0 && row.second<86400).sort((a,b)=>a.second-b.second||a.path.localeCompare(b.path));
+  timeline.disabled = !rows.length;
+  el('results').textContent = rows.length ? rows.length + ' đoạn · thanh xanh là thời gian có video' : 'Chưa có bản ghi trong ngày này.';
+  const marks = [];
+  for (const row of rows) {
+    const last = marks.at(-1), end = Math.min(86400,row.second + row.duration);
+    if (last && row.second <= last.end) last.end=Math.max(last.end,end);
+    else marks.push({start:row.second,end});
+  }
+  el('timeline-marks').replaceChildren(...marks.map(mark => {
+    const tick=document.createElement('i');tick.style.left=(mark.start/864)+'%';tick.style.width=((mark.end-mark.start)/864)+'%';return tick;
   }));
+  el('clips').replaceChildren(...rows.slice().reverse().map(row => {
+    const item=document.createElement('li'), button=document.createElement('button');
+    button.textContent=fmt(row.second)+' · '+row.camera;button.dataset.path=row.path;
+    button.onclick=()=>playClip(row.path);item.append(button);return item;
+  }));
+  if (activePath && !active()) resetReplay();
+  updateButtons();
+}
+async function clips() {
+  const current = ++requestId, start = dayStart(day.value);
+  if (!Number.isFinite(start)) {showClips([]);return;}
+  try {
+    const utcDays = [start,start+dayMs-1].map(t=>new Date(t).toISOString().slice(0,10));
+    const result=await Promise.all([...new Set(utcDays)].map(date => {
+      const query=new URLSearchParams({day:date});
+      if(filter.value) query.set('camera',filter.value);
+      return read('/api/clips?'+query);
+    }));
+    if(current===requestId) showClips(result.flat());
+  } catch {if(current===requestId) {showClips([]);el('results').textContent='Không tải được danh sách bản ghi.';}}
 }
 async function openCamera(id,replay) {
-  autoLive = false;
-  filter.value = id;
-  el('recordings-title').textContent = 'Bản ghi · ' + id;
-  player.pause(); player.removeAttribute('src'); player.load(); player.hidden = true;
-  if (replay) {stopStream(); el('recordings').scrollIntoView({block:'start'});}
+  autoLive=false;filter.value=id;el('recordings-title').textContent='Xem lại · '+id;resetReplay();
+  if(replay){stopStream();el('recordings').scrollIntoView({block:'start'});}
   else startLive(id);
-  const current = ++requestId;
-  el('results').textContent = 'Đang tìm bản ghi gần nhất…';
-  el('clips').replaceChildren();
+  const current=++requestId;
+  el('results').textContent='Đang tìm bản ghi gần nhất…';
   try {
-    const result = await read('/api/clips/latest/' + encodeURIComponent(id));
-    if (current !== requestId) return;
-    if (result.day) day.value = result.day;
-    showClips(result.clips);
-    if (replay && result.clips.length) playClip(result.clips[0]);
-  } catch {
-    if (current === requestId) el('results').textContent = 'Không tải được danh sách bản ghi.';
-  }
+    const result=await read('/api/clips/latest/'+encodeURIComponent(id));
+    if(current!==requestId) return;
+    if(result.clips.length) day.value=new Date(timestamp(result.clips[0])+vietnamOffset).toISOString().slice(0,10);
+    const nextId=requestId+1;
+    await clips();
+    if(replay && nextId===requestId && rows.length) playClip(rows.at(-1).path);
+  } catch {if(current===requestId) el('results').textContent='Không tải được danh sách bản ghi.';}
 }
+let cleanupSelection=null;
+function resetCleanup(){
+  cleanupSelection=null;el('cleanup-code').value='';el('cleanup-confirm').hidden=true;
+}
+el('cleanup-day').onchange=()=>{resetCleanup();el('cleanup-status').textContent='';};
+el('cleanup-preview').onclick=async()=>{
+  resetCleanup();
+  const before=el('cleanup-day').value;
+  try {
+    const result=await read('/api/clips/cleanup?'+new URLSearchParams({before}));
+    if(el('cleanup-day').value!==before) return;
+    el('cleanup-status').textContent=result.count ? 'Có '+result.count+' đoạn trước ngày '+before+'.' : 'Không có bản ghi cũ trong khoảng này.';
+    if(result.count) {cleanupSelection={before,count:result.count};el('cleanup-confirm').hidden=false;}
+  } catch {el('cleanup-status').textContent='Không kiểm tra được số bản ghi.';}
+};
+el('cleanup-delete').onclick=async()=>{
+  if(!cleanupSelection || el('cleanup-code').value!=='XOA') {el('cleanup-status').textContent='Nhập XOA để xác nhận.';return;}
+  const payload={...cleanupSelection,confirm:'XOA'};
+  el('cleanup-delete').disabled=true;
+  try {
+    const response=await fetch('/api/clips/cleanup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if(!response.ok) throw new Error(await response.text());
+    const result=await response.json();
+    el('cleanup-status').textContent='Đã xóa '+result.removed+' đoạn.'+(result.failed?' Không xóa được '+result.failed+' đoạn.':'');
+    resetCleanup();await clips();
+  } catch(error) {el('cleanup-status').textContent=error.message;resetCleanup();}
+  finally {el('cleanup-delete').disabled=false;}
+};
 let managing = '';
 async function openSettings(id) {
   managing = id;
@@ -263,6 +408,6 @@ async function refresh() {
     return clips();
   }),backup()]);
 }
-day.onchange = clips; filter.onchange = () => {el('recordings-title').textContent = filter.value ? 'Bản ghi · ' + filter.value : 'Bản ghi'; clips();}; el('refresh').onclick = refresh;
+day.onchange = () => {resetReplay();clips();}; filter.onchange = () => {resetReplay();el('recordings-title').textContent = filter.value ? 'Xem lại · ' + filter.value : 'Xem lại'; clips();}; el('refresh').onclick = refresh;
 refresh(); setInterval(refresh,30000);
 </script></body></html>

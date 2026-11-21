@@ -87,7 +87,6 @@ fn clips_for_day(root: PathBuf, filter: Selection) -> std::io::Result<Vec<String
         let parts = |s: &str| s.split('/').nth(3).unwrap_or_default().to_owned();
         b.get(..13).cmp(&a.get(..13)).then_with(|| parts(b).cmp(&parts(a))).then_with(|| a.cmp(b))
     });
-    clips.truncate(250);
     Ok(clips)
 }
 

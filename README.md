@@ -42,3 +42,9 @@ Tạo Google OAuth client loại Web application, bật Drive API và thêm URL 
 Mỗi camera Tapo có thể giữ clip khi có chuyển động, khi nhận diện tiếng khóc, hoặc dùng cả hai. Ở chế độ kết hợp, Frigate cũng tính âm lượng vượt ngưỡng là chuyển động nên có thể giữ đoạn có âm thanh lớn khác. Camera cần luồng có âm thanh để nhận diện tiếng khóc. CameraHome đặt thời gian lưu trên máy chủ là ba ngày cho các loại bản ghi đã bật.
 
 Bản ghi nhẹ sử dụng RTSP stream2 do camera nén sẵn, còn phát trực tiếp sử dụng stream1. Chất lượng và bitrate phụ thuộc model cũng như cấu hình camera. Nếu stream2 không hoạt động hoặc cần ảnh rõ hơn, bỏ chọn bản ghi nhẹ.
+
+### Xem lại theo thời gian và dọn clip
+
+Thanh thời gian dùng giờ Việt Nam. Chọn một camera và ngày, kéo đến một mốc hoặc mở một đoạn trong danh sách. Khi phát hết đoạn, trình phát chuyển sang đoạn kế tiếp của cùng camera. Các mức tốc độ ngoài khả năng trình duyệt dùng tua theo khung hình.
+
+Mục Dọn bản ghi cũ đếm các tệp trước 00:00 ngày đã chọn rồi yêu cầu nhập XOA. Chức năng xóa tệp MP4 trên ổ máy chủ, giữ các bản sao trên Drive. CameraHome đọc danh sách từ ổ đĩa. Chỉ mục của Frigate có thể còn hiển thị các đoạn đã xóa cho đến khi Frigate dọn chỉ mục.

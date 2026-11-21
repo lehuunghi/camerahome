@@ -9,7 +9,7 @@ services:
       PUBLIC_ORIGIN: https://camera.nghi.org
       CAMERA_SUBNET: 192.168.88
     volumes:
-      - /opt/frigate/storage/recordings:/recordings:ro
+      - /opt/frigate/storage/recordings:/recordings
       - /opt/frigate/backup-status:/backup-status:ro
       - /opt/frigate/config:/frigate-config:ro
       - /opt/camerahome-data:/app-data
