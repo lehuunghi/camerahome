@@ -117,6 +117,28 @@ code { overflow-wrap:anywhere; }
 .video-frame video{transform-origin:center;will-change:transform}.video-frame:fullscreen video{height:100%;max-height:none}.video-frame[data-zoomed=true] video{pointer-events:none}
 #replay-frame{border-radius:13px;margin-top:10px}#replay-frame:has(#player[hidden]){display:none}#replay-frame #player{margin:0}
 .card .actions button{min-width:34px;min-height:34px;font-size:1.02rem;border-radius:8px}.monitor #ptz-status{padding:0 16px 12px;color:#d0e5dc;font-size:.85rem}
+
+.panel,.card,.monitor,.camera-preview,nav,nav a,button,input,select,
+#account-form fieldset,#replay-frame,#player,.card .actions button { border-radius:5px; }
+.panel,.card,.monitor,nav,#account-form fieldset { border:0; box-shadow:none; }
+.card[data-active="true"] { box-shadow:none; background:var(--accent-pale); }
+.monitor,.monitor video,.video-frame,#player { background:transparent; }
+.monitor { color:var(--text); overflow:visible; }
+.monitor .title { padding:0 0 9px; }
+.monitor-tools { padding:7px 0; border:0; }
+.monitor #live-state,.monitor #ptz-status { color:var(--muted); padding:4px 0; }
+#live-empty { color:var(--muted); }
+.tool-group+.tool-group { border:0; padding-left:4px; }
+.monitor select { color:var(--text); background:var(--surface); border-color:var(--line); }
+.icon-button,.monitor .icon-button,.monitor #live-sound {
+  border:0; background:transparent; color:var(--accent); box-shadow:none;
+}
+.icon-button:hover:not(:disabled),.monitor .icon-button:hover:not(:disabled),.monitor #live-sound:hover {
+  background:var(--accent-pale); color:var(--accent);
+}
+.icon-button[aria-pressed=true] { outline:0; background:var(--accent-pale); }
+.icon-button:focus-visible { outline:3px solid #29a482; outline-offset:2px; }
+video { border:0; }
 </style></head>
 <body>
 <header><div class="shell header-row"><div class="brand"><span aria-hidden="true" class="brand-icon"></span>CameraHome</div>
@@ -139,7 +161,7 @@ code { overflow-wrap:anywhere; }
 </div>
 <div id="view-recordings" class="replay-layout" hidden><div class="view-heading"><h1>Xem lại</h1></div>
 <section class="panel" id="recordings"><h2 id="recordings-title">Xem lại</h2>
-<div class="filters"><label>Ngày Việt Nam <input id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
+<div class="filters"><label><input aria-label="Chọn ngày" id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
 <div class="video-frame" id="replay-frame"><video id="player" playsinline hidden></video></div>
 <div class="timeline-track" id="timeline-marks" aria-hidden="true"></div>
 <input aria-label="Kéo tới thời gian trong ngày" class="timeline-input" id="timeline" type="range" min="0" max="86399" value="0" step="1" disabled>
