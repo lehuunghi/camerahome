@@ -35,6 +35,7 @@ pub fn routes() -> Router<App> {
     Router::new()
         .route("/api/cameras", post(add_camera))
         .route("/api/live/{id}", get(live))
+        .route("/api/ptz/{id}", get(ptz_info).post(ptz_move))
         .route("/api/cameras/{id}/settings", get(camera_settings).post(change_camera_settings))
         .route("/api/drive", get(drive_status).post(start_drive))
         .route("/api/clips/cleanup", get(cleanup_preview).post(cleanup_recordings))
@@ -55,7 +56,7 @@ async fn add_camera(State(app): State<App>, headers: HeaderMap, Json(input): Jso
     require_origin(&headers)?;
     let subnet = env::var("CAMERA_SUBNET").unwrap_or_else(|_| "192.168.88".into());
     let address = input.ip.octets();
-    if !camera_id(&input.id) || input.id.len() > 48 || input.id.ends_with("__compact") || format!("{}.{}.{}", address[0], address[1], address[2]) != subnet
+    if !camera_id(&input.id) || input.id.len() > 48 || (input.id.ends_with("__compact") || input.id.ends_with("__filtered")) || format!("{}.{}.{}", address[0], address[1], address[2]) != subnet
         || !(1..255).contains(&address[3]) || input.username.is_empty() || input.password.is_empty()
         || input.username.len() > 128 || input.password.len() > 128 {
         return Err(problem(StatusCode::BAD_REQUEST, "Kiểm tra mã camera, IP trong mạng camera và Camera Account."));
@@ -108,6 +109,9 @@ fn update_settings(config: &mut Value, id: &str, url: &str, settings: CameraSett
     let go2rtc = config.as_object_mut().ok_or_else(internal)?.entry("go2rtc").or_insert_with(|| json!({}));
     let streams = object_at(go2rtc, "streams")?;
     streams.insert(id.to_owned(), json!([url, format!("ffmpeg:{id}#audio=aac")]));
+    streams.insert(format!("{id}__filtered"), json!([format!(
+        "ffmpeg:{id}#video=copy#audio=aac#raw=-af highpass=f=95,afftdn=nr=8:tn=1,agate=threshold=0.008:ratio=2:attack=25:release=180"
+    )]));
     if settings.compact {
         let location = url.split(['?', '#']).next().ok_or_else(internal)?;
         let mut substream = location.strip_suffix("/stream1").ok_or_else(internal)?.to_owned();
@@ -193,12 +197,19 @@ fn encode(value: &str) -> String {
     output
 }
 
-async fn live(State(app): State<App>, Path(id): Path<String>, headers: HeaderMap, ws: WebSocketUpgrade) -> Result<Response, Problem> {
+#[derive(Deserialize)]
+struct LiveOptions {
+    #[serde(default)]
+    filtered: bool,
+}
+
+async fn live(State(app): State<App>, Path(id): Path<String>, Query(options): Query<LiveOptions>, headers: HeaderMap, ws: WebSocketUpgrade) -> Result<Response, Problem> {
     require_origin(&headers)?;
     if !camera_id(&id) || !app.frigate.starts_with("http://") {
         return Err(problem(StatusCode::BAD_REQUEST, "Mã camera không hợp lệ."));
     }
-    let url = format!("{}{}/live/mse/api/ws?src={id}", "ws://", &app.frigate[7..]);
+    let stream = if options.filtered { format!("{id}__filtered") } else { id };
+    let url = format!("ws://{}/live/mse/api/ws?src={stream}", &app.frigate[7..]);
     Ok(ws.on_upgrade(move |socket| live_session(socket, url)))
 }
 
@@ -216,7 +227,17 @@ async fn live_session(mut socket: WebSocket, url: String) {
             }
             server = upstream.next() => {
                 let output = match server {
-                    Some(Ok(Upstream::Text(text))) => Message::Text(text.to_string().into()),
+                    Some(Ok(Upstream::Text(text))) => {
+                        let Ok(payload) = serde_json::from_str::<Value>(&text) else { continue; };
+                        match payload["type"].as_str() {
+                            Some("mse") => {
+                                let Some(codec) = payload["value"].as_str().filter(|v| v.starts_with("video/mp4") && v.len() < 256) else { continue; };
+                                Message::Text(json!({"type":"mse","value":codec}).to_string().into())
+                            }
+                            Some("error") => Message::Text(json!({"type":"error"}).to_string().into()),
+                            _ => continue,
+                        }
+                    },
                     Some(Ok(Upstream::Binary(bytes))) => Message::Binary(bytes),
                     Some(Ok(Upstream::Ping(_) | Upstream::Pong(_))) => continue,
                     _ => break,
@@ -225,6 +246,66 @@ async fn live_session(mut socket: WebSocket, url: String) {
             }
         }
     }
+}
+
+async fn supports_ptz(app: &App, id: &str) -> Result<bool, Problem> {
+    if !camera_id(id) {
+        return Err(problem(StatusCode::BAD_REQUEST, "Mã camera không hợp lệ."));
+    }
+    let config = read_config().await?;
+    if config["cameras"][id]["onvif"]["host"].as_str().is_none() { return Ok(false); }
+    let error = || problem(StatusCode::BAD_GATEWAY, "Không đọc được khả năng xoay của camera.");
+    let info: Value = app.client.get(format!("{}/api/{id}/ptz/info", app.frigate))
+        .send().await.map_err(|_| error())?.error_for_status().map_err(|_| error())?
+        .json().await.map_err(|_| error())?;
+    Ok(info["features"].as_array().is_some_and(|features| features.iter().any(|value| value.as_str() == Some("pt"))))
+}
+
+async fn ptz_info(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>, Problem> {
+    Ok(Json(json!({"pan_tilt": supports_ptz(&app, &id).await?})))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Direction { Up, Down, Left, Right }
+
+#[derive(Deserialize)]
+struct MoveInput { direction: Direction }
+
+async fn ptz_move(State(app): State<App>, Path(id): Path<String>, headers: HeaderMap, Json(input): Json<MoveInput>) -> Result<StatusCode, Problem> {
+    require_origin(&headers)?;
+    if !supports_ptz(&app, &id).await? {
+        return Err(problem(StatusCode::CONFLICT, "Camera này không hỗ trợ xoay."));
+    }
+    let guard = app.ptz_lock.clone().try_lock_owned().map_err(|_| problem(StatusCode::CONFLICT, "Đang xoay camera."));
+    let guard = guard?;
+    let host = app.frigate.strip_prefix("http://").ok_or_else(internal)?;
+    let ws_url = format!("ws://{host}/ws");
+    let topic = format!("{id}/ptz");
+    let payload = match input.direction {
+        Direction::Up => "MOVE_UP",
+        Direction::Down => "MOVE_DOWN",
+        Direction::Left => "MOVE_LEFT",
+        Direction::Right => "MOVE_RIGHT",
+    };
+    let moved = tokio::spawn(async move {
+        let _guard = guard;
+        let Ok(Ok((mut ws, _))) = time::timeout(Duration::from_secs(2), tokio_tungstenite::connect_async(ws_url.as_str())).await else { return false; };
+        let start = Upstream::Text(json!({"topic":topic,"payload":payload}).to_string().into());
+        let stop = Upstream::Text(json!({"topic":topic,"payload":"STOP"}).to_string().into());
+        let started = matches!(time::timeout(Duration::from_secs(1), ws.send(start)).await, Ok(Ok(())));
+        if started { time::sleep(Duration::from_millis(280)).await; }
+        if matches!(time::timeout(Duration::from_secs(1), ws.send(stop.clone())).await, Ok(Ok(()))) {
+            let _ = time::timeout(Duration::from_millis(300), ws.close(None)).await;
+            return started;
+        }
+        if let Ok(Ok((mut retry, _))) = time::timeout(Duration::from_secs(2), tokio_tungstenite::connect_async(ws_url)).await {
+            let _ = time::timeout(Duration::from_secs(1), retry.send(stop)).await;
+        }
+        false
+    }).await.unwrap_or(false);
+    if !moved { return Err(problem(StatusCode::BAD_GATEWAY, "Không xác nhận được lệnh xoay.")); }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 #[derive(Deserialize)]

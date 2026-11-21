@@ -13,6 +13,7 @@ struct App {
     status: PathBuf,
     management: std::sync::Arc<tokio::sync::Mutex<()>>,
     oauth: std::sync::Arc<tokio::sync::Mutex<Option<manage::OAuthPending>>>,
+    ptz_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
     drive_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
@@ -135,6 +136,7 @@ async fn main() {
         recordings: env::var("RECORDINGS_DIR").unwrap_or_else(|_| "/recordings".into()).into(),
         management: Default::default(),
         drive_lock: Default::default(),
+        ptz_lock: Default::default(),
         oauth: Default::default(),
         status: env::var("STATUS_DIR").unwrap_or_else(|_| "/backup-status".into()).into(),
     };
