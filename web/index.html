@@ -150,7 +150,7 @@ video { border:0; }
 <div class="title"><h2 id="live-title">Xem trực tiếp</h2><button id="stop-live" type="button">Đóng luồng</button></div>
 <div class="video-frame" id="live-frame"><video id="live-video" muted autoplay playsinline></video></div>
 <div class="monitor-tools">
-<div class="tool-group"><button id="live-sound" type="button">Bật tiếng</button><button id="live-filter" type="button">Lọc âm</button><button id="live-fullscreen" type="button">Toàn màn hình</button><select id="live-quality" aria-label="Chất lượng trực tiếp"><option value="low">Tiết kiệm</option><option value="hd">HD 1080p</option></select></div>
+<div class="tool-group"><button id="live-reconnect" type="button">Kết nối lại</button><button id="live-sound" type="button">Bật tiếng</button><button id="live-filter" type="button">Lọc âm</button><button id="live-fullscreen" type="button">Toàn màn hình</button><select id="live-quality" aria-label="Chất lượng trực tiếp"><option value="low">Tiết kiệm</option><option value="hd">HD 1080p</option></select></div>
 <div class="tool-group"><button id="live-zoom-out" type="button">Thu nhỏ</button><button id="live-zoom-in" type="button">Phóng to</button><button id="live-zoom-reset" type="button">Đặt lại zoom</button></div>
 <div class="tool-group" id="ptz-controls" hidden><button type="button" id="ptz-left">Xoay trái</button><button type="button" id="ptz-up">Xoay lên</button><button type="button" id="ptz-down">Xoay xuống</button><button type="button" id="ptz-right">Xoay phải</button></div>
 </div>
@@ -178,11 +178,14 @@ video { border:0; }
 <div id="view-admin" hidden><div class="view-heading"><h1>Quản trị</h1></div>
 <section class="panel" id="camera-settings" hidden><h2 id="settings-title">Cài đặt camera</h2>
 <form id="settings-form">
+<label data-camera-connection>Địa chỉ IP <input name="ip" inputmode="decimal"></label>
+<label data-camera-connection>Tên Camera Account <input name="cameraUser" autocomplete="off" placeholder="Để trống để giữ nguyên"></label>
+<label data-camera-connection>Mật khẩu Camera Account <input name="cameraPassword" type="password" autocomplete="new-password"></label>
 <label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label>
 <label class="check"><input name="compact" type="checkbox"> Bản ghi nhẹ (luồng phụ)</label>
 <button class="accent" type="submit">Lưu thay đổi</button>
 </form><p class="notice">Tiếng khóc cần camera có micro. Chế độ kết hợp có thể giữ cả đoạn có âm thanh lớn khác. Bản ghi nhẹ dùng luồng phụ; live vẫn dùng luồng chính.</p>
-<p id="settings-result" role="status"></p></section>
+<div class="tool-group"><button id="settings-reconnect" type="button" hidden>Kết nối lại</button><button id="settings-delete" type="button" hidden>Xóa camera</button></div><p id="settings-result" role="status"></p></section>
 <section class="panel" id="add"><h2>Thêm camera Tapo</h2><p class="notice">Camera cần ở mạng 192.168.88.x và hỗ trợ RTSP. Dùng Camera Account được tạo trong cài đặt nâng cao của app Tapo.</p>
 <form id="camera-form">
 <label>Mã camera <input name="id" placeholder="tapo_88_9" pattern="[A-Za-z0-9_\-]{1,48}" required maxlength="48"></label>
@@ -222,7 +225,7 @@ function setIcon(button, glyph, label) {
   button.title=label;
 }
 const buttonIcons={
-  refresh:['↻','Làm mới'], 'stop-live':['×','Đóng luồng'], 'live-sound':['◖×','Bật tiếng live'],
+  refresh:['↻','Làm mới'], 'live-reconnect':['↻','Kết nối lại'], 'settings-reconnect':['↻','Kết nối lại'], 'settings-delete':['⌫','Xóa camera'], 'stop-live':['×','Đóng luồng'], 'live-sound':['◖×','Bật tiếng live'],
   'live-filter':['≋','Bật lọc ồn'], 'live-fullscreen':['⛶','Toàn màn hình'],
   'prev-clip':['⏮','Đoạn trước'], 'toggle-replay':['▶','Phát'], 'next-clip':['⏭','Đoạn sau'],
   'mute-replay':['◖))','Tắt tiếng bản ghi'], 'cleanup-preview':['⌕','Kiểm tra số đoạn'],
@@ -502,11 +505,18 @@ async function openSettings(id) {
   el('settings-title').textContent = 'Cài đặt · ' + cameraName(id);
   el('camera-settings').scrollIntoView({block:'start'});
   const form = el('settings-form'), button = form.querySelector('button');
+  form.reset();
   button.disabled = true;
+  form.querySelectorAll('[data-camera-connection]').forEach(field=>field.hidden=!session.admin);
+  el('settings-reconnect').hidden=!allowed('live');
+  el('settings-delete').hidden=true;
   el('settings-result').textContent = 'Đang tải cấu hình…';
   try {
     const settings = await read('/api/cameras/' + encodeURIComponent(id) + '/settings');
     if (id !== managing) return;
+    form.elements.ip.value=settings.ip||'';
+    form.dataset.originalIp=settings.ip||'';
+    el('settings-delete').hidden=!session.admin;
     form.elements.mode.value = settings.mode;
     form.elements.compact.checked = settings.compact;
     el('settings-result').textContent = '';
@@ -520,10 +530,34 @@ el('settings-form').onsubmit = async event => {
   const form = event.currentTarget, id = managing, button = form.querySelector('button');
   button.disabled = true;
   try {
-    await submit(form,'/api/cameras/' + encodeURIComponent(id) + '/settings');
+    const {mode,compact,ip,cameraUser,cameraPassword}=form.elements;
+    const payload={mode:mode.value,compact:compact.checked};
+    if (session.admin && (ip.value.trim()!==form.dataset.originalIp || cameraUser.value || cameraPassword.value)) {
+      if (!ip.value.trim() || !cameraUser.value || !cameraPassword.value) throw new Error('Nhập IP, tên và mật khẩu Camera Account để đổi kết nối.');
+      payload.connection={ip:ip.value.trim(),username:cameraUser.value,password:cameraPassword.value};
+    }
+    const response=await fetch('/api/cameras/'+encodeURIComponent(id)+'/settings',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    if (!response.ok) throw new Error(await response.text());
+    if (managing===id) {form.dataset.originalIp=ip.value.trim();cameraUser.value='';cameraPassword.value='';}
     if (managing === id) el('settings-result').textContent = 'Đã lưu. Frigate sẽ nạp lại cấu hình.';
   } catch(error) {if (managing === id) el('settings-result').textContent = error.message;}
   finally {if (managing === id) button.disabled = false;}
+};
+
+el('settings-reconnect').onclick=()=>{if(managing) openCamera(managing,false);};
+el('settings-delete').onclick=async()=>{
+  const id=managing, button=el('settings-delete');
+  if (!session.admin || !id || !window.confirm('Gỡ '+cameraName(id)+' khỏi CameraHome và dừng ghi mới?')) return;
+  button.disabled=true;
+  try {
+    const response=await fetch('/api/cameras/'+encodeURIComponent(id)+'/settings',{method:'DELETE',headers:{'Content-Type':'application/json'},body:'{}'});
+    if (!response.ok) throw new Error(await response.text());
+    if (liveCamera===id) { stopStream();liveCamera=''; }
+    if (managing===id) {managing='';el('camera-settings').hidden=true;el('camera-result').textContent='Đã gỡ camera.';}
+    setTimeout(refresh,5000);
+  } catch(error) {el('settings-result').textContent=error.message;}
+  finally {button.disabled=false;}
 };
 
 async function backup() {
@@ -699,7 +733,7 @@ liveSound.onclick = () => {
   if (!liveVideo.muted && liveVideo.volume === 0) liveVideo.volume = .7;
   liveVideo.play().catch(() => {});
 };
-function startLive(id, keepZoom=false) {
+function startLive(id, keepZoom=false, attempt=0) {
   stopStream();
   if (!keepZoom) resetLiveZoom();
   ptzControls.hidden=true;
@@ -718,7 +752,28 @@ function startLive(id, keepZoom=false) {
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/live/' + encodeURIComponent(id)+'?quality='+encodeURIComponent(el('live-quality').value));
   ws.binaryType = 'arraybuffer';
   let buffer, queue = [], codec, ended = false;
-  function fail(message) {status.textContent = message; ws.close();}
+  let retryTimer, watchdog, retryScheduled=false, permanentFailure=false;
+  function reconnect() {
+    if (ended || retryScheduled || permanentFailure) return;
+    if (attempt>=5) {status.textContent='Không kết nối được. Bấm ↻ để thử lại hoặc kiểm tra Camera Account.';return;}
+    retryScheduled=true;
+    const wait=Math.min(16,2**attempt);
+    status.textContent='Mất luồng. Đang thử kết nối lại sau '+wait+' giây…';
+    retryTimer=setTimeout(()=>{if (!ended && currentView==='live' && liveCamera===id) startLive(id,true,attempt+1);},wait*1000);
+  }
+  function fail(message, permanent=false) {
+    if (ended) return;
+    permanentFailure=permanent;
+    status.textContent=message;
+    clearTimeout(watchdog);
+    ws.close();
+    reconnect();
+  }
+  function watch() {
+    clearTimeout(watchdog);
+    watchdog=setTimeout(()=>fail('Luồng không phản hồi.'),18000);
+  }
+  watch();
   function push() {
     if (!buffer || buffer.updating || ended) return;
     if (buffer.buffered.length && video.currentTime > buffer.buffered.start(0) + 40) {
@@ -737,7 +792,7 @@ function startLive(id, keepZoom=false) {
       buffer.addEventListener('updateend',push);
       status.textContent = 'Đang phát trực tiếp';
       push();
-    } catch {fail('Trình duyệt không hỗ trợ định dạng luồng camera.');}
+    } catch {fail('Trình duyệt không hỗ trợ định dạng luồng camera.',true);}
   }
   source.addEventListener('sourceopen', initialize);
   video.src = objectUrl;
@@ -746,16 +801,17 @@ function startLive(id, keepZoom=false) {
       let message; try {message = JSON.parse(event.data);} catch {return;}
       if (message.type === 'error') {fail('Chưa mở được luồng. Kiểm tra RTSP và Camera Account.'); return;}
       if (message.type === 'mse') {codec = message.value; initialize();}
-    } else if (queue.length < 80) {queue.push(event.data); push();}
+    } else if (queue.length < 80) {watch(); queue.push(event.data); push();}
     else {fail('Luồng bị chậm. Mở lại để tiếp tục xem.');}
   };
-  ws.onerror = () => {status.textContent = 'Không mở được kết nối trực tiếp.';};
-  ws.onclose = () => {if (!ended && status.textContent === 'Đang phát trực tiếp') status.textContent = 'Luồng đã ngắt. Bấm xem trực tiếp để kết nối lại.';};
+  ws.onerror = () => fail('Không mở được kết nối trực tiếp.');
+  ws.onclose = () => {clearTimeout(watchdog);reconnect();};
   stopStream = () => {
-    ended = true; ws.close(); video.removeAttribute('src'); video.load();
+    ended = true; clearTimeout(watchdog); clearTimeout(retryTimer); ws.close(); video.removeAttribute('src'); video.load();
     URL.revokeObjectURL(objectUrl); panel.hidden = true;
   };
 }
+el('live-reconnect').onclick=()=>{if(liveCamera) startLive(liveCamera,true);};
 el('stop-live').onclick = () => stopStream();
 el('live-quality').onchange=()=>{if(liveCamera) startLive(liveCamera,true);};
 async function refresh() {

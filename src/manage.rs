@@ -36,7 +36,7 @@ pub fn routes() -> Router<App> {
         .route("/api/cameras", post(add_camera))
         .route("/api/live/{id}", get(live))
         .route("/api/ptz/{id}", get(ptz_info).post(ptz_move))
-        .route("/api/cameras/{id}/settings", get(camera_settings).post(change_camera_settings))
+        .route("/api/cameras/{id}/settings", get(camera_settings).post(change_camera_settings).delete(delete_camera))
         .route("/api/drive", get(drive_status).post(start_drive))
         .route("/api/clips/cleanup", get(cleanup_preview).post(cleanup_recordings))
         .route("/drive/callback", get(finish_drive))
@@ -146,7 +146,7 @@ fn update_settings(config: &mut Value, id: &str, url: &str, settings: CameraSett
     Ok(())
 }
 
-async fn camera_settings(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>, Problem> {
+async fn camera_settings(State(app): State<App>, Extension(user): Extension<crate::accounts::Principal>, Path(id): Path<String>) -> Result<Json<Value>, Problem> {
     let _guard = app.management.lock().await;
     let config = read_config().await?;
     if !camera_id(&id) || camera_source(&config, &id).is_none() {
@@ -156,17 +156,65 @@ async fn camera_settings(State(app): State<App>, Path(id): Path<String>) -> Resu
     let cry = camera["audio"]["enabled"].as_bool().unwrap_or(false);
     let mode = if !cry {"motion"} else if camera["record"]["motion"]["days"].as_f64() == Some(0.0) {"crying"} else {"both"};
     let compact = camera["ffmpeg"]["inputs"][0]["path"].as_str().is_some_and(|path| path.ends_with("__compact"));
-    Ok(Json(json!({"mode":mode,"compact":compact})))
+    let ip = if user.admin { camera_source(&config, &id).and_then(|url| reqwest::Url::parse(url).ok()).and_then(|url| url.host_str().map(str::to_owned)) } else { None };
+    Ok(Json(json!({"mode":mode,"compact":compact,"ip":ip})))
 }
 
-async fn change_camera_settings(State(app): State<App>, Path(id): Path<String>, headers: HeaderMap, Json(settings): Json<CameraSettings>) -> Result<StatusCode, Problem> {
+#[derive(Deserialize)]
+struct CameraEdit {
+    #[serde(flatten)]
+    settings: CameraSettings,
+    connection: Option<CameraConnection>,
+}
+
+#[derive(Deserialize)]
+struct CameraConnection { ip: Ipv4Addr, username: String, password: String }
+
+async fn change_camera_settings(State(app): State<App>, Extension(user): Extension<crate::accounts::Principal>, Path(id): Path<String>, headers: HeaderMap, Json(edit): Json<CameraEdit>) -> Result<StatusCode, Problem> {
     require_origin(&headers)?;
     let _guard = app.management.lock().await;
     let mut config = read_config().await?;
     let url = camera_source(&config, &id).filter(|_| camera_id(&id)).map(str::to_owned)
         .ok_or_else(|| problem(StatusCode::NOT_FOUND, "Camera này chưa có cấu hình Tapo tương thích."))?;
-    update_settings(&mut config, &id, &url, settings)?;
+    let url = if let Some(connection) = edit.connection {
+        if !user.admin { return Err(problem(StatusCode::FORBIDDEN, "Chỉ admin được đổi kết nối camera.")); }
+        let [a,b,c,d] = connection.ip.octets();
+        let subnet = env::var("CAMERA_SUBNET").unwrap_or_else(|_| "192.168.88".into());
+        if format!("{a}.{b}.{c}") != subnet || !(1..255).contains(&d) || connection.username.is_empty()
+            || connection.password.is_empty() || connection.username.len()>128 || connection.password.len()>128 {
+            return Err(problem(StatusCode::BAD_REQUEST, "Nhập IP trong mạng camera cùng tên và mật khẩu Camera Account."));
+        }
+        if let Some(onvif) = config["cameras"][&id]["onvif"].as_object().filter(|v|v.contains_key("host")) {
+            let mut settings = onvif.clone();
+            settings.insert("host".into(),json!(connection.ip.to_string()));
+            settings.insert("user".into(),json!(connection.username));
+            settings.insert("password".into(),json!(connection.password));
+            config["cameras"][&id]["onvif"] = Value::Object(settings);
+        }
+        format!("rtsp://{}:{}@{}:554/stream1", encode(&connection.username), encode(&connection.password), connection.ip)
+    } else { url };
+    update_settings(&mut config, &id, &url, edit.settings)?;
     save_config(&app, &config).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn delete_camera(State(app): State<App>, Extension(user): Extension<crate::accounts::Principal>, Path(id): Path<String>, headers: HeaderMap) -> Result<StatusCode, Problem> {
+    require_origin(&headers)?;
+    if !user.admin { return Err(problem(StatusCode::FORBIDDEN,"Chỉ admin được xóa camera.")); }
+    let _guard = app.management.lock().await;
+    let mut config = read_config().await?;
+    if !camera_id(&id) || object_at(&mut config,"cameras")?.remove(&id).is_none() {
+        return Err(problem(StatusCode::NOT_FOUND,"Không tìm thấy camera."));
+    }
+    if let Some(streams) = config["go2rtc"]["streams"].as_object_mut() {
+        for name in [id.clone(),format!("{id}__compact"),format!("{id}__1080")] { streams.remove(&name); }
+    }
+    if let Some(groups) = config["camera_groups"].as_object_mut() {
+        for group in groups.values_mut() {
+            if let Some(cameras) = group["cameras"].as_array_mut() { cameras.retain(|name|name.as_str()!=Some(id.as_str())); }
+        }
+    }
+    save_config(&app,&config).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
