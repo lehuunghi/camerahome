@@ -139,6 +139,7 @@ code { overflow-wrap:anywhere; }
 .icon-button[aria-pressed=true] { outline:0; background:var(--accent-pale); }
 .icon-button:focus-visible { outline:3px solid #29a482; outline-offset:2px; }
 video { border:0; }
+#replay-download{display:flex;justify-content:flex-end;margin-top:5px}#download-clip{display:inline-grid;place-items:center;min-width:42px;min-height:42px;color:var(--accent);text-decoration:none;border-radius:5px;font-size:1.4rem}#download-clip:hover{background:var(--accent-pale)}#download-clip:focus-visible{outline:3px solid #29a482}
 </style></head>
 <body>
 <header><div class="shell header-row"><div class="brand"><span aria-hidden="true" class="brand-icon"></span>CameraHome</div>
@@ -162,7 +163,7 @@ video { border:0; }
 <div id="view-recordings" class="replay-layout" hidden><div class="view-heading"><h1>Xem lại</h1></div>
 <section class="panel" id="recordings"><h2 id="recordings-title">Xem lại</h2>
 <div class="filters"><label><input aria-label="Chọn ngày" id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
-<div class="video-frame" id="replay-frame"><video id="player" playsinline hidden></video></div>
+<div class="video-frame" id="replay-frame"><video id="player" playsinline hidden></video></div><div id="replay-download" hidden><a id="download-clip" download aria-label="Tải clip đang xem về máy" title="Tải clip đang xem về máy"><span aria-hidden="true">⤓</span></a></div>
 <div class="timeline-track" id="timeline-marks" aria-hidden="true"></div>
 <input aria-label="Kéo tới thời gian trong ngày" class="timeline-input" id="timeline" type="range" min="0" max="86399" value="0" step="1" disabled>
 <div class="timeline-times"><span>00:00</span><output id="timeline-time">00:00:00</output><span>24:00</span></div>
@@ -357,6 +358,8 @@ function updateButtons() {
 function stopReplay() {playing = false; player.pause(); updateButtons();}
 function resetReplay() {
   resetReplayZoom();
+  el('replay-download').hidden=true;
+  el('download-clip').removeAttribute('href');
   stopReplay(); activePath = ''; player.removeAttribute('src'); player.load(); player.hidden = true;
   el('playback-state').textContent = '';
 }
@@ -375,6 +378,10 @@ function playClip(path, offset=0, autoplay=true) {
   playing = autoplay;
   queuedSeek = offset;
   activePath = path;
+  const download=el('download-clip');
+  download.href=mediaUrl(path);
+  download.download=path.split('/').join('_');
+  el('replay-download').hidden=false;
   player.hidden = false;
   setClock(row.second+offset);
   player.src = mediaUrl(path);
