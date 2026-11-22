@@ -221,13 +221,14 @@ async fn expire(remote:&Remote,days:u32,source:&str)->Result<(),Problem>{
 async fn sync(app:&App,source:&str,days:u32)->Result<(),Problem>{
  let r=remote(source).await?;
  let files=local_files(app,days).await?;
- if !files.is_empty(){
+ let copied=if !files.is_empty(){
   let file=format!("/app-data/cloud-upload-{source}.txt");
   private(&file,files.join("\n").as_bytes()).await?;
   let result=output(&r,&["copy",app.recordings.to_str().ok_or_else(error)?,&r.target,"--files-from",&file,"--min-age","1m","--transfers","2"],240).await;
-  let _=fs::remove_file(file).await;result?;
- }
- expire(&r,days,source).await
+  let _=fs::remove_file(file).await;result.map(|_|())
+ }else{Ok(())};
+ let expired=expire(&r,days,source).await;
+ copied?;expired
 }
 pub async fn backup_worker(app:App){
  let mut tick=time::interval(Duration::from_secs(300));tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
