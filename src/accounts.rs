@@ -407,3 +407,16 @@ async fn save_site(State(app):State<App>,Extension(user):Extension<Principal>,he
     atomic_write(SITE_FILE,name.as_bytes(),0o600,None).await?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[cfg(test)]mod cloud_permission_tests {
+ use super::*;
+ #[test]fn cloud_replay_respects_camera_permissions(){
+  let p=Principal{user:"viewer".into(),session_id:None,admin:false,access:Access{recordings:true,cameras:vec!["bep".into()],..Access::default()}};
+  assert!(permits(&p,&Method::GET,"/api/cloud/clips"));
+  assert!(permits(&p,&Method::GET,"/api/cloud/media/r2/2026-11-22/07/bep/01.02.mp4"));
+  assert!(!permits(&p,&Method::GET,"/api/cloud/media/drive/2026-11-22/07/ngu/01.02.mp4"));
+  assert!(!permits(&p,&Method::GET,"/api/storage"));
+  assert!(!permits(&p,&Method::POST,"/api/storage/r2"));
+  assert!(!permits(&p,&Method::GET,"/api/cloud/media/r2/2026-11-22/07/../01.02.mp4"));
+ }
+}
