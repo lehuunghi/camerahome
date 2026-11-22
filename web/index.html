@@ -148,7 +148,7 @@ video { border:0; }
 }
 </style></head>
 <body>
-<header><div class="shell header-row"><div class="brand"><span aria-hidden="true" class="brand-icon"></span>CameraHome</div>
+<header><div class="shell header-row"><div class="brand"><span aria-hidden="true" class="brand-icon"></span><span id="site-brand">CameraHome</span></div>
 <nav aria-label="Điều hướng chính"><a href="#live" data-view="live" aria-current="page">Trực tiếp</a><a href="#recordings" data-view="recordings">Xem lại</a><a href="#add" data-view="admin">Quản trị</a></nav><button id="logout" type="button" hidden>Đăng xuất</button></div></header>
 <main class="shell">
 <div id="view-live">
@@ -214,6 +214,13 @@ video { border:0; }
 <label>OAuth Client Secret <input name="client_secret" type="password" required autocomplete="new-password" maxlength="300"></label>
 <button class="accent" type="submit">Kết nối Google Drive</button>
 </form><p id="drive-result" role="status"></p></section>
+<section class="panel" id="site-panel" hidden><h2>Tên website</h2>
+<form id="site-form"><label>Tên hiển thị <input name="name" maxlength="60" required placeholder="CameraHome"></label><button type="submit" class="accent">Lưu tên</button></form><p id="site-result" role="status"></p></section>
+<section class="panel" id="purge-panel" hidden><h2>Xóa toàn bộ bản ghi</h2>
+<p class="notice">Xóa vĩnh viễn video của mọi camera trên máy chủ, kể cả hôm nay, video gốc, video đã nén và video xuất. Giữ bản sao Google Drive. Camera sẽ tự ghi tiếp sau khi dọn xong.</p>
+<button type="button" id="purge-open" class="danger">Xóa tất cả bản ghi</button>
+<form id="purge-form" hidden><label>Nhập XOA TAT CA để xác nhận <input name="confirm" required autocomplete="off" pattern="XOA TAT CA"></label><button type="submit" id="purge-submit" class="danger">Xóa vĩnh viễn tất cả video</button></form>
+<p id="purge-result" role="status"></p></section>
 <section class="panel" id="accounts-panel" hidden><h2>Tài khoản và quyền</h2>
 <p class="notice">Chọn tài khoản để đổi mật khẩu, khóa hoặc sửa quyền. Tài khoản admin có toàn quyền và có thể đổi mật khẩu.</p>
 <ul id="account-list" class="clip-list"></ul>
@@ -920,6 +927,30 @@ accountForm.onsubmit=async event=>{
   } catch(error) {el('account-status').textContent=error.message;}
   finally {button.disabled=false;}
 };
+function applySiteName(name){name=name||'CameraHome';document.title=name;el('site-brand').textContent=name;}
+el('site-form').onsubmit=async event=>{
+  event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
+  try{await submit(form,'/api/site');applySiteName(form.elements.name.value.trim());el('site-result').textContent='Đã lưu tên website.';}
+  catch(error){el('site-result').textContent=error.message;}finally{button.disabled=false;}
+};
+let purgePoll;
+async function pollPurge(){
+  clearTimeout(purgePoll);
+  try{
+    const result=await read('/api/clips/purge');
+    const busy=['pending','running'].includes(result.state);
+    el('purge-open').disabled=busy;el('purge-submit').disabled=busy;
+    el('purge-result').textContent=result.message||'';
+    if(busy){el('purge-form').hidden=true;purgePoll=setTimeout(pollPurge,2500);}
+    if(result.state==='done'){resetReplay();await clips();}
+  }catch{el('purge-result').textContent='Chưa tải được trạng thái xóa.';}
+}
+el('purge-open').onclick=()=>{el('purge-form').hidden=false;el('purge-form').elements.confirm.value='';el('purge-form').elements.confirm.focus();};
+el('purge-form').onsubmit=async event=>{
+  event.preventDefault();el('purge-submit').disabled=true;
+  try{await submit(event.currentTarget,'/api/clips/purge');stopReplay();await pollPurge();}
+  catch(error){el('purge-result').textContent=error.message;el('purge-submit').disabled=false;}
+};
 async function initializePage(){
   try {session=await read('/api/session');}
   catch {location.replace('/login');return;}
@@ -931,6 +962,10 @@ async function initializePage(){
   el('drive').hidden=!session.admin;
   el('cleanup').hidden=!session.admin;
   el('accounts-panel').hidden=!session.admin;
+  el('site-panel').hidden=!session.admin;
+  el('purge-panel').hidden=!session.admin;
+  applySiteName(session.site_name);
+  if(session.admin){el('site-form').elements.name.value=session.site_name||'CameraHome';pollPurge();}
   if (session.admin) {accountForm.elements.password.required=true;accountsList();}
   if (!allowed('live')) el('live-empty').textContent='Tài khoản không được cấp quyền xem trực tiếp.';
   selectNav();
