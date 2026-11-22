@@ -108,7 +108,17 @@ fn clip_time(path:&str)->Option<i64>{
  chrono::NaiveDateTime::parse_from_str(&stamp,"%Y-%m-%d %H.%M.%S").ok().map(|v|v.and_utc().timestamp())
 }
 #[derive(Deserialize)]struct ClipQuery{source:String,day:String,camera:Option<String>}
+static LIST_CACHE:LazyLock<tokio::sync::Mutex<BTreeMap<String,(std::time::Instant,Vec<String>)>>>=LazyLock::new(Default::default);
 async fn list_day(remote:&Remote,day:&str)->Result<Vec<String>,Problem>{
+ let key=format!("{}/{}",remote.target,day);
+ {let cache=LIST_CACHE.lock().await;if let Some((at,list))=cache.get(&key){if at.elapsed()<Duration::from_secs(20){return Ok(list.clone());}}}
+ let list=list_day_uncached(remote,day).await?;
+ let mut cache=LIST_CACHE.lock().await;
+ cache.retain(|_,(at,_)|at.elapsed()<Duration::from_secs(20));
+ if cache.len()<256{cache.insert(key,(std::time::Instant::now(),list.clone()));}
+ Ok(list)
+}
+async fn list_day_uncached(remote:&Remote,day:&str)->Result<Vec<String>,Problem>{
  let target=format!("{}/{day}",remote.target);
  // Missing day directories are normal; distinguish them using the directory listing.
  let bytes=output(remote,&["lsjson",&target,"--recursive","--files-only","--no-modtime","--no-mimetype"],60).await;
@@ -196,7 +206,7 @@ async fn expire(remote:&Remote,days:u32,source:&str)->Result<(),Problem>{
  for day in String::from_utf8_lossy(&dirs).lines().map(|v|v.trim_end_matches('/')) {
   let Ok(date)=chrono::NaiveDate::parse_from_str(day,"%Y-%m-%d") else{continue;};
   if !crate::valid_recording_day(day)||date.and_hms_opt(0,0,0).unwrap().and_utc().timestamp()>cutoff{continue;}
-  for path in list_day(remote,day).await? {
+  for path in list_day_uncached(remote,day).await? {
    if clip_time(&path).is_some_and(|at|at<cutoff){expired.push(path);}
   }
  }
