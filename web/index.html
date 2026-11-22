@@ -140,6 +140,12 @@ code { overflow-wrap:anywhere; }
 .icon-button:focus-visible { outline:3px solid #29a482; outline-offset:2px; }
 video { border:0; }
 #replay-download{display:flex;justify-content:flex-end;margin-top:5px}#download-clip{display:inline-grid;place-items:center;min-width:42px;min-height:42px;color:var(--accent);text-decoration:none;border-radius:5px;font-size:1.4rem}#download-clip:hover{background:var(--accent-pale)}#download-clip:focus-visible{outline:3px solid #29a482}
+@media(max-width:580px) {
+  .recording-filters {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:stretch}
+  .recording-filters label {display:flex;align-items:center;gap:5px;min-width:0}
+  .recording-filters input,.recording-filters select {width:100%;min-width:0;margin-left:0;padding:9px 6px}
+  .recording-filters input[type=date] {min-height:42px}
+}
 </style></head>
 <body>
 <header><div class="shell header-row"><div class="brand"><span aria-hidden="true" class="brand-icon"></span>CameraHome</div>
@@ -162,7 +168,7 @@ video { border:0; }
 </div>
 <div id="view-recordings" class="replay-layout" hidden><div class="view-heading"><h1>Xem lại</h1></div>
 <section class="panel" id="recordings"><h2 id="recordings-title">Xem lại</h2>
-<div class="filters"><label><input aria-label="Chọn ngày" id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
+<div class="filters recording-filters"><label><input aria-label="Chọn ngày" id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
 <div class="video-frame" id="replay-frame"><video id="player" playsinline hidden></video></div><div id="replay-download" hidden><a id="download-clip" download aria-label="Tải clip đang xem về máy" title="Tải clip đang xem về máy"><span aria-hidden="true">⤓</span></a></div>
 <div class="timeline-track" id="timeline-marks" aria-hidden="true"></div>
 <input aria-label="Kéo tới thời gian trong ngày" class="timeline-input" id="timeline" type="range" min="0" max="86399" value="0" step="1" disabled>
@@ -213,7 +219,7 @@ video { border:0; }
 <ul id="account-list" class="clip-list"></ul>
 <form id="account-form">
 <label>Tên đăng nhập <input name="user" required maxlength="32" pattern="[A-Za-z0-9_\-]{1,32}" autocomplete="off"></label>
-<label>Mật khẩu mới <input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password"></label>
+<label>Mật khẩu mới <input name="password" type="password" minlength="6" maxlength="128" autocomplete="new-password"></label>
 <label class="check"><input type="checkbox" name="enabled" checked> Được đăng nhập</label>
 <fieldset><legend>Cho phép</legend><label class="check"><input name="live" type="checkbox" checked> Xem trực tiếp</label><label class="check"><input name="recordings" type="checkbox" checked> Xem bản ghi</label><label class="check"><input name="ptz" type="checkbox"> Xoay camera</label><label class="check"><input name="settings" type="checkbox"> Đổi chế độ ghi</label></fieldset>
 <fieldset><legend>Camera được cấp quyền</legend><div id="account-cameras"></div></fieldset>
