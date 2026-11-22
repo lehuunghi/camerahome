@@ -507,29 +507,37 @@ function showClips(list) {
   updateButtons();
 }
 let pendingClips=null,displayedClipKey='';
-async function clips() {
+async function clips(onReady) {
   if (!allowed('recordings')) return;
   const source=el('recording-source').value,selectedCamera=filter.value,selectedDay=day.value;
   const key=JSON.stringify([source,selectedCamera,selectedDay]);
-  if(pendingClips?.key===key)return pendingClips.promise;
+  if(pendingClips?.key===key){
+    if(typeof onReady==='function'){if(pendingClips.ready)onReady();else pendingClips.callbacks.push(onReady);}
+    return pendingClips.promise;
+  }
   const current=++requestId,start=dayStart(selectedDay);
   if(!Number.isFinite(start)){showClips([]);return;}
+  const callbacks=typeof onReady==='function'?[onReady]:[],received=[];
   const promise=(async()=>{
     const utcDays=[...new Set([start,start+dayMs-1].map(t=>new Date(t).toISOString().slice(0,10)))];
-    const results=await Promise.allSettled(utcDays.map(date=>{
+    const results=await Promise.allSettled(utcDays.map(async date=>{
       const query=new URLSearchParams({day:date});
       if(selectedCamera)query.set('camera',selectedCamera);
       if(source!=='local')query.set('source',source);
-      return read((source==='local'?'/api/clips?':'/api/cloud/clips?')+query);
+      const part=await read((source==='local'?'/api/clips?':'/api/cloud/clips?')+query);
+      if(current===requestId){
+        received.push(...part);showClips(received);displayedClipKey=key;
+        if(received.length){if(pendingClips?.promise===promise)pendingClips.ready=true;callbacks.splice(0).forEach(callback=>callback());}
+      }
+      return part;
     }));
     if(current!==requestId)return;
     const good=results.filter(result=>result.status==='fulfilled');
     const failed=results.filter(result=>result.status==='rejected');
-    if(good.length){showClips(good.flatMap(result=>result.value));displayedClipKey=key;}
-    else if(displayedClipKey!==key)showClips([]);
+    if(!good.length&&displayedClipKey!==key)showClips([]);
     if(failed.length)el('results').textContent=(good.length?el('results').textContent+' · Chưa tải đủ khoảng thời gian. ':'')+(failed[0].reason.message||'Chưa lấy được danh sách video. Thử lại sau.');
   })();
-  pendingClips={key,promise};
+  pendingClips={key,promise,callbacks,ready:false};
   try{return await promise;}
   finally{if(pendingClips?.promise===promise)pendingClips=null;}
 }
@@ -542,7 +550,7 @@ async function openCamera(id,replay) {
   el('results').textContent='Đang tìm bản ghi gần nhất…';
   try {
     if(el('recording-source').value!=='local'){
-      await clips();if(replay&&filter.value===id&&currentView==='recordings'&&rows.length)playClip(rows.at(-1).path);return;
+      await clips(()=>{if(replay&&filter.value===id&&currentView==='recordings'&&rows.length)playClip(rows.at(-1).path);});return;
     }
     const result=await read('/api/clips/latest/'+encodeURIComponent(id));
     if(current!==requestId) return;
