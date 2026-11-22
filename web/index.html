@@ -158,7 +158,7 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <div class="title"><h2 id="live-title">Xem trực tiếp</h2><button id="stop-live" type="button">Đóng luồng</button></div>
 <div class="video-frame" id="live-frame"><video id="live-video" muted autoplay playsinline></video></div>
 <div class="monitor-tools">
-<div class="tool-group"><button id="live-reconnect" type="button">Kết nối lại</button><button id="live-sound" type="button">Bật tiếng</button><button id="live-filter" type="button">Lọc âm</button><button id="live-fullscreen" type="button">Toàn màn hình</button><select id="live-quality" aria-label="Chất lượng trực tiếp"><option value="low">Tiết kiệm</option><option value="hd">HD 1080p</option></select></div>
+<div class="tool-group"><button id="live-reconnect" type="button">Kết nối lại</button><button id="live-sound" type="button">Bật tiếng</button><button id="live-fullscreen" type="button">Toàn màn hình</button><select id="live-quality" aria-label="Chất lượng trực tiếp"><option value="low">Tiết kiệm</option><option value="hd">HD 1080p</option></select></div>
 <div class="tool-group"><button id="live-zoom-out" type="button">Thu nhỏ</button><button id="live-zoom-in" type="button">Phóng to</button><button id="live-zoom-reset" type="button">Đặt lại zoom</button></div>
 <div class="tool-group" id="ptz-controls" hidden><button type="button" id="ptz-left">Xoay trái</button><button type="button" id="ptz-up">Xoay lên</button><button type="button" id="ptz-down">Xoay xuống</button><button type="button" id="ptz-right">Xoay phải</button></div>
 </div>
@@ -195,9 +195,9 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <label data-camera-connection>Tên Camera Account <input name="cameraUser" autocomplete="off" placeholder="Để trống để giữ nguyên"></label>
 <label data-camera-connection>Mật khẩu Camera Account <input name="cameraPassword" type="password" autocomplete="new-password"></label>
 <label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label>
-<label class="check"><input name="compact" type="checkbox"> Bản ghi nhẹ (luồng phụ)</label>
+<label>Chất lượng bản ghi <select name="recordingQuality"><option value="hd">HD / độ nét gốc (luồng chính)</option><option value="low">Tiết kiệm (luồng phụ)</option></select></label>
 <button class="accent" type="submit">Lưu thay đổi</button>
-</form><p class="notice">Tiếng khóc cần camera có micro. Chế độ kết hợp có thể giữ cả đoạn có âm thanh lớn khác. Bản ghi nhẹ dùng luồng phụ; live vẫn dùng luồng chính.</p>
+</form><p class="notice">Tiếng khóc cần camera có micro. Chế độ kết hợp có thể giữ cả đoạn có âm thanh lớn khác. Chọn HD để ghi luồng chính ở độ nét gốc, gồm 1080p nếu camera hỗ trợ. Bản ghi đã nén giữ độ phân giải và được sao lưu nguyên file lên Drive/R2.</p>
 <div class="tool-group"><button id="settings-reconnect" type="button" hidden>Kết nối lại</button><button id="settings-delete" type="button" hidden>Xóa camera</button></div><p id="settings-result" role="status"></p></section>
 <section class="panel" id="add"><h2>Thêm camera Tapo</h2><p class="notice">Camera cần ở mạng 192.168.88.x và hỗ trợ RTSP. Dùng Camera Account được tạo trong cài đặt nâng cao của app Tapo.</p>
 <form id="camera-form">
@@ -207,7 +207,7 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <label>IP camera <input name="ip" placeholder="192.168.88.9" required inputmode="decimal" maxlength="15"></label>
 <label>Tên Camera Account <input name="username" required maxlength="128" autocomplete="off"></label>
 <label>Mật khẩu Camera Account <input name="password" type="password" required maxlength="128" autocomplete="new-password"></label>
-<label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label><label class="check"><input name="compact" type="checkbox" checked> Bản ghi nhẹ (luồng phụ)</label><button class="accent" type="submit">Thêm camera</button>
+<label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label><label>Chất lượng bản ghi <select name="recordingQuality"><option value="hd">HD / độ nét gốc (luồng chính)</option><option value="low">Tiết kiệm (luồng phụ)</option></select></label><button class="accent" type="submit">Thêm camera</button>
 </form><p id="camera-result" role="status"></p></section>
 <section class="panel" id="drive"><h2>Google Drive</h2><p id="backup" role="status">Đang kiểm tra…</p>
 <h3>Kết nối nhanh bằng mã rclone</h3>
@@ -280,7 +280,7 @@ function setIcon(button, glyph, label) {
 }
 const buttonIcons={
   refresh:['↻','Làm mới'], logout:['⇥','Đăng xuất'], 'live-reconnect':['↻','Kết nối lại'], 'settings-reconnect':['↻','Kết nối lại'], 'settings-delete':['⌫','Xóa camera'], 'stop-live':['×','Đóng luồng'], 'live-sound':['◖×','Bật tiếng live'],
-  'live-filter':['≋','Bật lọc ồn'], 'live-fullscreen':['⛶','Toàn màn hình'],
+  'live-fullscreen':['⛶','Toàn màn hình'],
   'prev-clip':['⏮','Đoạn trước'], 'toggle-replay':['▶','Phát'], 'next-clip':['⏭','Đoạn sau'],
   'mute-replay':['◖))','Tắt tiếng bản ghi'], 'cleanup-preview':['⌕','Kiểm tra số đoạn'],
   'cleanup-delete':['⌫','Xóa vĩnh viễn'], 'ptz-left':['←','Xoay trái'], 'ptz-up':['↑','Xoay lên'],
@@ -597,7 +597,7 @@ async function openSettings(id) {
     form.dataset.originalIp=settings.ip||'';
     el('settings-delete').hidden=!session.admin;
     form.elements.mode.value = settings.mode;
-    form.elements.compact.checked = settings.compact;
+    form.elements.recordingQuality.value = settings.compact?'low':'hd';
     el('settings-result').textContent = '';
     button.disabled = false;
   } catch {
@@ -609,8 +609,8 @@ el('settings-form').onsubmit = async event => {
   const form = event.currentTarget, id = managing, button = form.querySelector('button');
   button.disabled = true;
   try {
-    const {mode,compact,ip,cameraUser,cameraPassword}=form.elements;
-    const payload={mode:mode.value,compact:compact.checked};
+    const {mode,recordingQuality,ip,cameraUser,cameraPassword}=form.elements;
+    const payload={mode:mode.value,compact:recordingQuality.value==='low'};
     if(session.admin){payload.mac=form.elements.mac.value.trim();payload.auto_ip=form.elements.auto_ip.checked;}
     if (session.admin && (ip.value.trim()!==form.dataset.originalIp || cameraUser.value || cameraPassword.value)) {
       if (!ip.value.trim() || !cameraUser.value || !cameraPassword.value) throw new Error('Nhập IP, tên và mật khẩu Camera Account để đổi kết nối.');
@@ -650,7 +650,7 @@ async function backup() {
 }
 async function submit(form, endpoint) {
   const body = Object.fromEntries(new FormData(form));
-  if (form.elements.compact) body.compact = form.elements.compact.checked;
+  if (form.elements.recordingQuality) body.compact = form.elements.recordingQuality.value==='low';
   if (form.elements.auto_ip) body.auto_ip = form.elements.auto_ip.checked;
   const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   if (!response.ok) throw new Error((await response.text()).slice(0, 300) || 'Yêu cầu thất bại.');
@@ -704,8 +704,8 @@ el('drive-form').onsubmit = async event => {
 
 let stopStream = () => {};
 const liveVideo = el('live-video'), liveSound = el('live-sound');
-const liveFilter=el('live-filter'), ptzControls=el('ptz-controls');
-let useFilter=false, liveAudio=null;
+const ptzControls=el('ptz-controls');
+let liveAudio=null;
 async function prepareLiveAudio() {
   if (liveAudio) {await liveAudio.context.resume();return liveAudio;}
   const Audio = window.AudioContext || window.webkitAudioContext;
@@ -740,12 +740,9 @@ async function prepareLiveAudio() {
     const bass=context.createBiquadFilter();
     bass.type='highpass';bass.frequency.value=110;bass.Q.value=.65;
     const gate=new AudioWorkletNode(context,'quiet-noise-gate');
-    const dry=context.createGain(), wet=context.createGain();
     const source=context.createMediaElementSource(liveVideo);
-    source.connect(dry).connect(context.destination);
-    source.connect(bass).connect(gate).connect(wet).connect(context.destination);
-    dry.gain.value=1;wet.gain.value=0;
-    liveAudio={context,dry,wet};
+    source.connect(bass).connect(gate).connect(context.destination);
+    liveAudio={context};
     return liveAudio;
   } catch(error) {await context.close();throw error;}
 }
@@ -778,27 +775,6 @@ function zoomControls(prefix, frame, video) {
 }
 const resetLiveZoom=zoomControls('live',el('live-frame'),liveVideo);
 const resetReplayZoom=zoomControls('replay',el('replay-frame'),player);
-liveFilter.setAttribute('aria-pressed','false');
-liveFilter.onclick=async()=>{
-  if (!liveCamera) return;
-  const next=!useFilter;
-  liveFilter.disabled=true;
-  if (next) {
-    liveVideo.muted=false;
-    if (!liveVideo.volume) liveVideo.volume=.7;
-    liveVideo.play().catch(()=>{});
-  }
-  try {
-    const audio=await prepareLiveAudio();
-    const now=audio.context.currentTime;
-    audio.dry.gain.setTargetAtTime(next?0:1,now,.025);
-    audio.wet.gain.setTargetAtTime(next?1:0,now,.025);
-    useFilter=next;
-    liveFilter.setAttribute('aria-pressed',String(useFilter));
-    setIcon(liveFilter,'≋',useFilter?'Tắt lọc ồn':'Bật lọc ồn');
-  } catch(error) {el('ptz-status').textContent=error.message||'Không bật được lọc ồn.';}
-  finally {liveFilter.disabled=false;}
-};
 el('live-fullscreen').onclick=()=>{
   const frame=el('live-frame');
   if (document.fullscreenElement) {document.exitFullscreen?.();return;}
@@ -823,10 +799,19 @@ for (const direction of ['left','up','down','right']) {
 liveVideo.addEventListener('volumechange', () => {
   setIcon(liveSound,liveVideo.muted?'◖×':'◖))',liveVideo.muted?'Bật tiếng live':'Tắt tiếng live');
 });
-liveSound.onclick = () => {
-  liveVideo.muted = !liveVideo.muted;
-  if (!liveVideo.muted && liveVideo.volume === 0) liveVideo.volume = .7;
-  liveVideo.play().catch(() => {});
+liveSound.onclick = async () => {
+  if (!liveVideo.muted) {liveVideo.muted=true;return;}
+  liveSound.disabled=true;
+  try {
+    await prepareLiveAudio();
+    liveVideo.muted=false;
+    if (liveVideo.volume===0) liveVideo.volume=.7;
+    await liveVideo.play();
+    el('ptz-status').textContent='';
+  } catch(error) {
+    liveVideo.muted=true;
+    el('ptz-status').textContent=error.message||'Không mở được âm thanh đã lọc.';
+  } finally {liveSound.disabled=false;}
 };
 function startLive(id, keepZoom=false, attempt=0) {
   stopStream();
