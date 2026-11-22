@@ -1,0 +1,8 @@
+[Unit]
+Description=CameraHome confirmed full local recording cleanup
+After=docker.service
+ConditionPathExists=/opt/camerahome-data/purge-request.json
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/camerahome/scripts/purge-recordings.py
+TimeoutStartSec=300
