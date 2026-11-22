@@ -337,7 +337,7 @@ function selectNav() {
 window.addEventListener('hashchange',selectNav);
 async function read(path, type = 'json') {
   const response = await fetch(path, {cache:'no-store'});
-  if (!response.ok) throw new Error(String(response.status));
+  if (!response.ok) {const message=(await response.text()).slice(0,250);throw new Error(message&&!message.trim().startsWith('<')?message:'Máy chủ phản hồi lỗi '+response.status);}
   return response[type]();
 }
 async function cameras() {
@@ -456,8 +456,8 @@ player.addEventListener('timeupdate',() => {const row=active(); if(row) setClock
 player.addEventListener('ended',() => advance());
 player.addEventListener('error',() => {
   if (!activePath) return;
-  if (playing && playlist().some(row => row.second > (active()?.second ?? 86400))) advance();
-  else {stopReplay();el('playback-state').textContent = 'Không phát được đoạn này. Bản ghi có thể đã bị dọn.';}
+  stopReplay();
+  el('playback-state').textContent=el('recording-source').value==='local'?'Không mở được đoạn này. Bấm Phát để thử lại.':'Kho đám mây chưa trả được video hoặc đang giới hạn API. Bấm Phát để thử lại.';
 });
 setInterval(() => {
   if (!stepped || !playing || player.readyState < 2) return;
@@ -467,6 +467,7 @@ setInterval(() => {
 },100);
 el('toggle-replay').onclick = () => {
   if (playing) stopReplay();
+  else if (player.error && activePath) playClip(activePath,Number.isFinite(player.currentTime)?player.currentTime:0);
   else if (!activePath && rows.length) playClip(rows[0].path);
   else {playing=true; applyRate(); updateButtons();}
 };
@@ -505,21 +506,32 @@ function showClips(list) {
   if (activePath && !active()) resetReplay();
   updateButtons();
 }
+let pendingClips=null,displayedClipKey='';
 async function clips() {
   if (!allowed('recordings')) return;
-  const current = ++requestId, start = dayStart(day.value);
-  if (!Number.isFinite(start)) {showClips([]);return;}
-  try {
-    const utcDays = [start,start+dayMs-1].map(t=>new Date(t).toISOString().slice(0,10));
-    const result=await Promise.all([...new Set(utcDays)].map(date => {
+  const source=el('recording-source').value,selectedCamera=filter.value,selectedDay=day.value;
+  const key=JSON.stringify([source,selectedCamera,selectedDay]);
+  if(pendingClips?.key===key)return pendingClips.promise;
+  const current=++requestId,start=dayStart(selectedDay);
+  if(!Number.isFinite(start)){showClips([]);return;}
+  const promise=(async()=>{
+    const utcDays=[...new Set([start,start+dayMs-1].map(t=>new Date(t).toISOString().slice(0,10)))];
+    const results=await Promise.allSettled(utcDays.map(date=>{
       const query=new URLSearchParams({day:date});
-      if(filter.value) query.set('camera',filter.value);
-      const source=el('recording-source').value;
+      if(selectedCamera)query.set('camera',selectedCamera);
       if(source!=='local')query.set('source',source);
       return read((source==='local'?'/api/clips?':'/api/cloud/clips?')+query);
     }));
-    if(current===requestId) showClips(result.flat());
-  } catch {if(current===requestId) {showClips([]);el('results').textContent='Không tải được bản ghi. Kiểm tra kết nối nguồn lưu trữ đã chọn.';}}
+    if(current!==requestId)return;
+    const good=results.filter(result=>result.status==='fulfilled');
+    const failed=results.filter(result=>result.status==='rejected');
+    if(good.length){showClips(good.flatMap(result=>result.value));displayedClipKey=key;}
+    else if(displayedClipKey!==key)showClips([]);
+    if(failed.length)el('results').textContent=(good.length?el('results').textContent+' · Chưa tải đủ khoảng thời gian. ':'')+(failed[0].reason.message||'Chưa lấy được danh sách video. Thử lại sau.');
+  })();
+  pendingClips={key,promise};
+  try{return await promise;}
+  finally{if(pendingClips?.promise===promise)pendingClips=null;}
 }
 async function openCamera(id,replay) {
   autoLive=false;setView(replay?'recordings':'live');filter.value=id;el('recordings-title').textContent='Bản ghi · '+cameraName(id);resetReplay();
@@ -530,7 +542,7 @@ async function openCamera(id,replay) {
   el('results').textContent='Đang tìm bản ghi gần nhất…';
   try {
     if(el('recording-source').value!=='local'){
-      await clips();if(replay&&rows.length)playClip(rows.at(-1).path);return;
+      await clips();if(replay&&filter.value===id&&currentView==='recordings'&&rows.length)playClip(rows.at(-1).path);return;
     }
     const result=await read('/api/clips/latest/'+encodeURIComponent(id));
     if(current!==requestId) return;
