@@ -527,7 +527,7 @@ async function clips(onReady) {
       const part=await read((source==='local'?'/api/clips?':'/api/cloud/clips?')+query);
       if(current===requestId){
         received.push(...part);showClips(received);displayedClipKey=key;
-        if(received.length){if(pendingClips?.promise===promise)pendingClips.ready=true;callbacks.splice(0).forEach(callback=>callback());}
+        if(rows.length){if(pendingClips?.promise===promise)pendingClips.ready=true;callbacks.splice(0).forEach(callback=>callback());}
       }
       return part;
     }));
