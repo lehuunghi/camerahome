@@ -360,37 +360,45 @@ async fn ptz_move(State(app): State<App>, Path(id): Path<String>, headers: Heade
 
 #[derive(Deserialize)]
 struct Cleanup {
-    before: String,
+    before: Option<String>,
+    camera: Option<String>,
     #[serde(default)]
     confirm: String,
     #[serde(default)]
     count: usize,
 }
 
-fn cutoff(input: &Cleanup) -> Result<chrono::NaiveDateTime, Problem> {
-    let date = chrono::NaiveDate::parse_from_str(&input.before, "%Y-%m-%d")
+fn cutoff(input: &Cleanup) -> Result<Option<chrono::NaiveDateTime>, Problem> {
+    if let Some(id)=input.camera.as_deref() {
+        if !camera_id(id) || input.before.is_some() {
+            return Err(problem(StatusCode::BAD_REQUEST,"Phạm vi camera không hợp lệ."));
+        }
+        return Ok(None);
+    }
+    let before=input.before.as_deref().ok_or_else(||problem(StatusCode::BAD_REQUEST,"Chọn ngày hoặc một camera."))?;
+    let date = chrono::NaiveDate::parse_from_str(before, "%Y-%m-%d")
         .map_err(|_| problem(StatusCode::BAD_REQUEST, "Ngày dọn bản ghi không hợp lệ."))?;
     let today = (chrono::Utc::now() + chrono::Duration::hours(7)).date_naive();
     if date > today {
         return Err(problem(StatusCode::BAD_REQUEST, "Chọn ngày hiện tại hoặc một ngày trước đó."));
     }
     date.and_hms_opt(0, 0, 0).and_then(|d| d.checked_sub_signed(chrono::Duration::hours(7)))
-        .ok_or_else(internal)
+        .map(Some).ok_or_else(internal)
 }
 
-fn old_recordings(root: PathBuf, before: chrono::NaiveDateTime) -> std::io::Result<Vec<PathBuf>> {
+fn old_recordings(root: PathBuf, before: Option<chrono::NaiveDateTime>, camera: Option<String>) -> std::io::Result<Vec<PathBuf>> {
     let mut result = Vec::new();
     for entry in crate::entries(&root)? {
         let day = entry.file_name().to_string_lossy().into_owned();
         if !entry.file_type()?.is_dir() || !crate::valid_recording_day(&day) { continue; }
         let Ok(date) = chrono::NaiveDate::parse_from_str(&day, "%Y-%m-%d") else { continue; };
-        if date > before.date() { continue; }
-        let clips = crate::clips_for_day(root.clone(), crate::Selection { day, camera: None })?;
+        if before.is_some_and(|cutoff|date > cutoff.date()) { continue; }
+        let clips = crate::clips_for_day(root.clone(), crate::Selection { day, camera: camera.clone() })?;
         for clip in clips {
             let parts: Vec<_> = clip.split('/').collect();
             let Some(stem) = parts[3].strip_suffix(".mp4") else { continue; };
             let time = format!("{} {}.{}", parts[0], parts[1], stem);
-            if chrono::NaiveDateTime::parse_from_str(&time, "%Y-%m-%d %H.%M.%S").is_ok_and(|at| at < before) {
+            if chrono::NaiveDateTime::parse_from_str(&time, "%Y-%m-%d %H.%M.%S").is_ok_and(|at| before.is_none_or(|cutoff|at < cutoff)) {
                 result.push(root.join(clip));
             }
         }
@@ -400,7 +408,7 @@ fn old_recordings(root: PathBuf, before: chrono::NaiveDateTime) -> std::io::Resu
 
 async fn cleanup_preview(State(app): State<App>, Query(input): Query<Cleanup>) -> Result<Json<Value>, Problem> {
     let before = cutoff(&input)?;
-    let count = tokio::task::spawn_blocking(move || old_recordings(app.recordings, before).map(|list| list.len()))
+    let count = tokio::task::spawn_blocking(move || old_recordings(app.recordings, before, input.camera).map(|list| list.len()))
         .await.map_err(|_| internal())?.map_err(|_| internal())?;
     Ok(Json(json!({"count":count})))
 }
@@ -414,7 +422,7 @@ async fn cleanup_recordings(State(app): State<App>, headers: HeaderMap, Json(inp
     let _backup = app.drive_lock.try_lock().map_err(|_| problem(StatusCode::CONFLICT, "Đang sao lưu Drive. Thử lại khi lượt sao lưu xong."))?;
     let _cleanup = app.management.lock().await;
     let result = tokio::task::spawn_blocking(move || -> Result<Value, Problem> {
-        let clips = old_recordings(app.recordings, before).map_err(|_| internal())?;
+        let clips = old_recordings(app.recordings, before, input.camera).map_err(|_| internal())?;
         if clips.len() != input.count {
             return Err(problem(StatusCode::CONFLICT, "Danh sách bản ghi đã đổi. Hãy kiểm tra lại trước khi xóa."));
         }

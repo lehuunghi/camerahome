@@ -170,8 +170,8 @@ video { border:0; }
 <label>Tốc độ <select id="speed"><option value="0.05">Chậm 20×</option><option value="0.1">Chậm 10×</option><option value="0.1666666667">Chậm 6×</option><option value="0.25">Chậm 4×</option><option value="0.5">Chậm 2×</option><option value="1" selected>1×</option><option value="2">Nhanh 2×</option><option value="4">Nhanh 4×</option><option value="6">Nhanh 6×</option><option value="10">Nhanh 10×</option><option value="20">Nhanh 20×</option></select></label>
 <button id="mute-replay" type="button">Tắt tiếng</button><button id="replay-zoom-out" type="button">Thu nhỏ</button><button id="replay-zoom-in" type="button">Phóng to</button><button id="replay-zoom-reset" type="button">Đặt lại zoom</button></div>
 <p id="results" role="status"></p><p id="playback-state" class="notice" role="status"></p><ul id="clips" class="clip-list"></ul>
-<details id="cleanup"><summary>Dọn bản ghi cũ</summary><p class="notice">Xóa clip trên máy chủ của tất cả camera trước 00:00 ngày đã chọn, theo giờ Việt Nam. Bản sao Google Drive giữ nguyên.</p>
-<div class="filters"><label>Xóa trước ngày <input id="cleanup-day" type="date"></label><button id="cleanup-preview">Kiểm tra số đoạn</button></div>
+<details id="cleanup"><summary>Dọn bản ghi</summary><p class="notice">Chọn một camera để xóa toàn bộ clip hiện có, hoặc chọn theo ngày để dọn bản ghi cũ của mọi camera. Bản sao Google Drive giữ nguyên.</p>
+<div class="filters"><label>Phạm vi <select id="cleanup-camera"><option value="">Mọi camera theo ngày</option></select></label><label id="cleanup-date-label">Xóa trước ngày <input id="cleanup-day" type="date"></label><button id="cleanup-preview">Kiểm tra số đoạn</button></div>
 <div class="filters" id="cleanup-confirm" hidden><label>Nhập XOA <input id="cleanup-code" autocomplete="off"></label><button class="danger" id="cleanup-delete">Xóa vĩnh viễn</button></div>
 <p id="cleanup-status" role="status"></p></details>
 </section></div>
@@ -289,7 +289,13 @@ async function read(path, type = 'json') {
 async function cameras() {
   try {
     const list = await read('/api/cameras');
-    knownCameras=list; if(session.admin) renderAccountCameras();
+    knownCameras=list; if(session.admin) {
+      renderAccountCameras();
+      const dropdown=el('cleanup-camera'), choice=dropdown.value;
+      dropdown.replaceChildren(new Option('Mọi camera theo ngày',''),...list.map(item=>new Option(cameraName(item.id),item.id)));
+      dropdown.value=list.some(item=>item.id===choice)?choice:'';
+      if (dropdown.value!==choice) dropdown.onchange();
+    }
     const selected = filter.value;
     filter.replaceChildren(new Option('Tất cả',''), ...list.map(item => new Option(cameraName(item.id),item.id)));
     filter.value = list.some(item => item.id === selected) ? selected : '';
@@ -474,14 +480,19 @@ function resetCleanup(){
   cleanupSelection=null;el('cleanup-code').value='';el('cleanup-confirm').hidden=true;
 }
 el('cleanup-day').onchange=()=>{resetCleanup();el('cleanup-status').textContent='';};
+el('cleanup-camera').onchange=()=>{
+  resetCleanup();el('cleanup-status').textContent='';
+  el('cleanup-date-label').hidden=Boolean(el('cleanup-camera').value);
+};
 el('cleanup-preview').onclick=async()=>{
   resetCleanup();
-  const before=el('cleanup-day').value;
+  const before=el('cleanup-day').value,camera=el('cleanup-camera').value;
+  const scope=camera?{camera}:{before};
   try {
-    const result=await read('/api/clips/cleanup?'+new URLSearchParams({before}));
-    if(el('cleanup-day').value!==before) return;
-    el('cleanup-status').textContent=result.count ? 'Có '+result.count+' đoạn trước ngày '+before+'.' : 'Không có bản ghi cũ trong khoảng này.';
-    if(result.count) {cleanupSelection={before,count:result.count};el('cleanup-confirm').hidden=false;}
+    const result=await read('/api/clips/cleanup?'+new URLSearchParams(scope));
+    if(el('cleanup-camera').value!==camera || (!camera && el('cleanup-day').value!==before)) return;
+    el('cleanup-status').textContent=(camera?cameraName(camera):'Trước '+before)+' · '+result.count+' clip. '+(result.count?'Nhập XOA để xóa vĩnh viễn.':'');
+    if(result.count) {cleanupSelection={...scope,count:result.count};el('cleanup-confirm').hidden=false;}
   } catch {el('cleanup-status').textContent='Không kiểm tra được số bản ghi.';}
 };
 el('cleanup-delete').onclick=async()=>{
