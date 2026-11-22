@@ -43,7 +43,8 @@ async fn remote(source:&str)->Result<Remote,Problem>{
 }
 fn command(remote:&Remote)->Command{
  let mut c=Command::new("rclone");
- c.args(["--config",&remote.config,"--contimeout","8s","--timeout","45s","--retries","1","--low-level-retries","2"]).envs(remote.env.iter().cloned()).kill_on_drop(true);
+ c.args(["--config",&remote.config,"--contimeout","10s","--timeout","90s","--retries","1","--low-level-retries","5"]).envs(remote.env.iter().cloned()).kill_on_drop(true);
+ if remote.config=="/app-data/drive.conf" {c.args(["--tpslimit","1","--tpslimit-burst","1","--drive-pacer-min-sleep","1s","--drive-pacer-burst","1"]);}
  c
 }
 fn transfer_error(stderr:&[u8])->Problem {
@@ -52,6 +53,8 @@ fn transfer_error(stderr:&[u8])->Problem {
   "Lệnh sao lưu không tương thích với phiên bản rclone."
  }else if message.contains("invalid_grant")||message.contains("invalid_client")||message.contains("unauthorized_client"){
   "Quyền Google Drive đã hết hiệu lực. Kết nối lại bằng mã rclone mới."
+ }else if message.contains("ratelimitexceeded")||message.contains("rate_limit_exceeded")||message.contains("rate limit"){
+  "Google Drive đang giới hạn lượt gọi API. Hệ thống sẽ chờ và tự thử lại."
  }else if message.contains("storagequotaexceeded")||message.contains("storage quota"){
   "Google Drive đã hết dung lượng lưu trữ."
  }else if message.contains("insufficient")||message.contains("access denied")||message.contains("forbidden"){
@@ -124,7 +127,7 @@ fn clip_time(path:&str)->Option<i64>{
 static LIST_CACHE:LazyLock<tokio::sync::Mutex<BTreeMap<String,(std::time::Instant,Vec<String>)>>>=LazyLock::new(Default::default);
 async fn list_day(remote:&Remote,day:&str)->Result<Vec<String>,Problem>{
  let key=format!("{}/{}",remote.target,day);
- {let cache=LIST_CACHE.lock().await;if let Some((at,list))=cache.get(&key){if at.elapsed()<Duration::from_secs(20){return Ok(list.clone());}}}
+ {let cache=LIST_CACHE.lock().await;if let Some((at,list))=cache.get(&key){if at.elapsed()<Duration::from_secs(60){return Ok(list.clone());}}}
  let list=list_day_uncached(remote,day).await?;
  let mut cache=LIST_CACHE.lock().await;
  cache.retain(|_,(at,_)|at.elapsed()<Duration::from_secs(20));
@@ -241,7 +244,9 @@ async fn sync(app:&App,source:&str,days:u32)->Result<(),Problem>{
  let copied=if !files.is_empty(){
   let file=format!("/app-data/cloud-upload-{source}.txt");
   private(&file,files.join("\n").as_bytes()).await?;
-  let result=output(&r,&["copy",app.recordings.to_str().ok_or_else(error)?,&r.target,"--files-from",&file,"--transfers","2"],240).await;
+  let status_file=format!("/app-data/{source}-status");
+  let _=private(&status_file,format!("Đang kiểm tra và sao lưu {} video; tự chờ nếu kho lưu trữ giới hạn API.|{}",files.len(),chrono::Utc::now().timestamp()).as_bytes()).await;
+  let result=output(&r,&["copy",app.recordings.to_str().ok_or_else(error)?,&r.target,"--files-from",&file,"--transfers","1","--checkers","1","--retries","3","--retries-sleep","30s"],600).await;
   let _=fs::remove_file(file).await;result.map(|_|())
  }else{Ok(())};
  let expired=expire(&r,days,source).await;
@@ -332,6 +337,7 @@ pub async fn backup_worker(app:App){
  #[test]fn safe_failure_reason(){
  let (_,reason)=transfer_error(b"Failed to load filters: private credential");
  assert!(reason.contains("rclone"));assert!(!reason.contains("private credential"));
+ let (_,rate)=transfer_error(b"RATE_LIMIT_EXCEEDED");assert!(rate.contains("giới hạn"));
 }
  #[test]fn ranges(){assert_eq!(byte_range(Some("bytes=10-19"),100),Ok((10,19,true)));assert_eq!(byte_range(Some("bytes=-10"),100),Ok((90,99,true)));assert_eq!(byte_range(Some("bytes=90-"),100),Ok((90,99,true)));assert!(byte_range(Some("bytes=100-"),100).is_err());assert!(byte_range(Some("bytes=0-1,4-5"),100).is_err());}
  #[test]fn paths(){assert_eq!(clip_camera("2026-11-22/07/bep/01.02.mp4"),Some("bep"));for bad in ["2026-11-22/07/../01.02.mp4","2026-11-22/99/bep/01.02.mp4","2026-11-22/07/bep/../../key","2026-02-30/07/bep/01.02.mp4"]{assert!(clip_camera(bad).is_none());}}
