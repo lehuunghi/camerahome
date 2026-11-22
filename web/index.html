@@ -546,12 +546,13 @@ async function openCamera(id,replay) {
   if(replay){stopStream();el('recordings').scrollIntoView({block:'start'});}
   else startLive(id);
   if (!allowed('recordings')) return;
-  const current=++requestId;
+  let current=requestId;
   el('results').textContent='Đang tìm bản ghi gần nhất…';
   try {
     if(el('recording-source').value!=='local'){
       await clips(()=>{if(replay&&filter.value===id&&currentView==='recordings'&&rows.length)playClip(rows.at(-1).path);});return;
     }
+    current=++requestId;
     const result=await read('/api/clips/latest/'+encodeURIComponent(id));
     if(current!==requestId) return;
     if(result.clips.length) day.value=new Date(timestamp(result.clips[0])+vietnamOffset).toISOString().slice(0,10);
