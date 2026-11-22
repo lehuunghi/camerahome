@@ -911,7 +911,7 @@ async function refresh() {
   await Promise.all([cameras().then(list => {
     const first = currentView === 'live' && allowed('live') && autoLive && list?.find(item => item.fps > 0);
     if (first) {autoLive = false; return openCamera(first.id,false);}
-    return clips();
+    return currentView==='recordings'?clips():Promise.resolve();
   }),session.admin?backup():Promise.resolve()]);
 }
 function updateSourceSummary(){const source=el('recording-source');el('recording-source-summary').textContent='Nguồn: '+source.options[source.selectedIndex].text;}
