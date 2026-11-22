@@ -770,12 +770,12 @@ function startLive(id, keepZoom=false, attempt=0) {
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/api/live/' + encodeURIComponent(id)+'?quality='+encodeURIComponent(el('live-quality').value));
   ws.binaryType = 'arraybuffer';
   let buffer, queue = [], codec, ended = false;
-  let retryTimer, watchdog, retryScheduled=false, permanentFailure=false;
+  let retryTimer, watchdog, retryScheduled=false, permanentFailure=false, lastFrame=Date.now(), progressAt=0, healthySince=0;
+  let progressTimer;
   function reconnect() {
     if (ended || retryScheduled || permanentFailure) return;
-    if (attempt>=5) {status.textContent='Không kết nối được. Bấm ↻ để thử lại hoặc kiểm tra Camera Account.';return;}
     retryScheduled=true;
-    const wait=Math.min(16,2**attempt);
+    const wait=Math.min(30,2**Math.min(attempt,5));
     status.textContent='Mất luồng. Đang thử kết nối lại sau '+wait+' giây…';
     retryTimer=setTimeout(()=>{if (!ended && currentView==='live' && liveCamera===id) startLive(id,true,attempt+1);},wait*1000);
   }
@@ -788,6 +788,7 @@ function startLive(id, keepZoom=false, attempt=0) {
     reconnect();
   }
   function watch() {
+    lastFrame=Date.now();
     clearTimeout(watchdog);
     watchdog=setTimeout(()=>fail('Luồng không phản hồi.'),18000);
   }
@@ -819,16 +820,28 @@ function startLive(id, keepZoom=false, attempt=0) {
       let message; try {message = JSON.parse(event.data);} catch {return;}
       if (message.type === 'error') {fail('Chưa mở được luồng. Kiểm tra RTSP và Camera Account.'); return;}
       if (message.type === 'mse') {codec = message.value; initialize();}
-    } else if (queue.length < 80) {watch(); queue.push(event.data); push();}
+    } else if (queue.length < 80) {watch(); if (!healthySince) healthySince=Date.now(); if(Date.now()-healthySince>30000) attempt=0; queue.push(event.data); push();}
     else {fail('Luồng bị chậm. Mở lại để tiếp tục xem.');}
   };
   ws.onerror = () => fail('Không mở được kết nối trực tiếp.');
   ws.onclose = () => {clearTimeout(watchdog);reconnect();};
+  let previousPosition=0;
+  progressTimer=setInterval(()=>{
+    if(ended || document.hidden || video.paused) {progressAt=Date.now();previousPosition=video.currentTime;return;}
+    if(video.currentTime>previousPosition+.05) {progressAt=Date.now();previousPosition=video.currentTime;}
+    else if(progressAt && Date.now()-progressAt>15000 && buffer && buffer.buffered.length) {
+      const end=buffer.buffered.end(buffer.buffered.length-1);
+      if(end>video.currentTime+2) {video.currentTime=Math.max(0,end-.8);progressAt=Date.now();}
+      else fail('Video tạm dừng. Đang nối lại…');
+    }
+  },3000);
   stopStream = () => {
-    ended = true; clearTimeout(watchdog); clearTimeout(retryTimer); ws.close(); video.removeAttribute('src'); video.load();
+    ended = true; clearTimeout(watchdog); clearTimeout(retryTimer); clearInterval(progressTimer); ws.close(); video.removeAttribute('src'); video.load();
     URL.revokeObjectURL(objectUrl); panel.hidden = true;
   };
 }
+window.addEventListener('online',()=>{if(currentView==='live' && liveCamera && !el('live').hidden) startLive(liveCamera,true);});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden && currentView==='live' && liveCamera && !el('live').hidden) startLive(liveCamera,true);});
 el('live-reconnect').onclick=()=>{if(liveCamera) startLive(liveCamera,true);};
 el('stop-live').onclick = () => stopStream();
 el('live-quality').onchange=()=>{if(liveCamera) startLive(liveCamera,true);};
