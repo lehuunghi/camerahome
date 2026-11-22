@@ -168,7 +168,7 @@ video { border:0; }
 </div>
 <div id="view-recordings" class="replay-layout" hidden><div class="view-heading"><h1>Xem lại</h1></div>
 <section class="panel" id="recordings"><h2 id="recordings-title">Xem lại</h2>
-<div class="filters"><label>Nguồn xem lại <select id="recording-source"><option value="local">Máy chủ</option><option value="drive">Google Drive</option><option value="r2">Cloudflare R2</option></select></label></div>
+<p id="recording-source-summary" class="notice">Nguồn: Máy chủ</p>
 <div class="filters recording-filters"><label><input aria-label="Chọn ngày" id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
 <div class="video-frame" id="replay-frame"><video id="player" playsinline hidden></video></div><div id="replay-download" hidden><a id="download-clip" download aria-label="Tải clip đang xem về máy" title="Tải clip đang xem về máy"><span aria-hidden="true">⤓</span></a></div>
 <div class="timeline-track" id="timeline-marks" aria-hidden="true"></div>
@@ -184,6 +184,7 @@ video { border:0; }
 <p id="cleanup-status" role="status"></p></details>
 </section></div>
 <div id="view-admin" hidden><div class="view-heading"><h1>Quản trị</h1></div>
+<section class="panel" id="replay-source-panel"><h2>Nguồn xem lại</h2><div class="filters"><label>Nguồn xem lại <select id="recording-source"><option value="local">Máy chủ</option><option value="drive">Google Drive</option><option value="r2">Cloudflare R2</option></select></label></div><p class="notice">Lựa chọn được ghi nhớ trên trình duyệt này và áp dụng cho phần Xem lại.</p></section>
 <section class="panel" id="camera-settings" hidden><h2 id="settings-title">Cài đặt camera</h2>
 <form id="settings-form">
 <label data-camera-connection>MAC camera <input name="mac" placeholder="AA:BB:CC:DD:EE:FF · trống để tự học" maxlength="17"></label>
@@ -898,7 +899,8 @@ async function refresh() {
     return clips();
   }),session.admin?backup():Promise.resolve()]);
 }
-el('recording-source').onchange=()=>{localStorage.setItem('recording-source',el('recording-source').value);resetReplay();showClips([]);clips();};
+function updateSourceSummary(){const source=el('recording-source');el('recording-source-summary').textContent='Nguồn: '+source.options[source.selectedIndex].text;}
+el('recording-source').onchange=()=>{updateSourceSummary();localStorage.setItem('recording-source',el('recording-source').value);resetReplay();showClips([]);clips();};
 day.onchange = () => {resetReplay();clips();}; filter.onchange = () => {resetReplay();el('recordings-title').textContent = filter.value ? 'Bản ghi · ' + cameraName(filter.value) : 'Bản ghi'; clips();}; el('refresh').onclick = refresh;
 const accountForm=el('account-form');
 function renderAccountCameras(checked) {
@@ -1015,6 +1017,7 @@ async function initializePage(){
   el('site-panel').hidden=!session.admin;
   el('cloud-panel').hidden=!session.admin;
   const savedSource=localStorage.getItem('recording-source');if(['local','drive','r2'].includes(savedSource))el('recording-source').value=savedSource;
+  updateSourceSummary();
   if(session.admin)loadCloudSettings();
   el('purge-panel').hidden=!session.admin;
   applySiteName(session.site_name);
