@@ -232,11 +232,12 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <button class="accent" type="submit">Kết nối Google Drive</button>
 </form><p id="drive-result" role="status"></p></details></section>
 <section class="panel" id="cloud-panel" hidden><h2>Lưu trữ đám mây</h2>
-<h3>Google Drive</h3><form id="cloud-policy-form">
+<h3>Chính sách giữ bản ghi</h3><form id="cloud-policy-form">
+<label>Số ngày giữ video đã sao lưu trên máy chủ <input name="local_days" type="number" min="0" max="3650" value="0" required></label>
 <label class="check"><input name="drive_enabled" type="checkbox" checked> Sao lưu lên Google Drive</label>
 <label>Số ngày giữ video trên Drive <input name="drive_days" type="number" min="0" max="3650" value="0" required></label>
-<button type="submit">Lưu tùy chọn Drive</button></form>
-<p class="notice">0 = không tự xóa trên Drive. Khi đặt số ngày, video quá hạn trong thư mục bản ghi sẽ bị xóa vĩnh viễn.</p>
+<button type="submit">Lưu thời gian lưu trữ</button></form>
+<p class="notice">Trên máy chủ: 0 = không tự xóa. Chỉ dọn video đã nén sau khi xác nhận có bản sao đủ dung lượng trên các nguồn đám mây đang bật; nếu bật cả Drive và R2 thì cần đủ hai bản sao. Nên giữ trên đám mây lâu hơn trên máy chủ. Video gốc Frigate vẫn theo chính sách ghi của từng camera.<br>Trên Drive: 0 = không tự xóa. Khi đặt số ngày, video quá hạn trong thư mục bản ghi sẽ bị xóa vĩnh viễn.</p>
 <h3>Cloudflare R2</h3><form id="r2-form">
 <label>Account ID <input name="account_id" maxlength="32" required autocomplete="off"></label>
 <label>Bucket <input name="bucket" maxlength="63" required></label>
@@ -247,7 +248,7 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <label class="check"><input name="enabled" type="checkbox" checked> Sao lưu lên R2</label>
 <button type="submit" class="accent">Kiểm tra và lưu R2</button></form>
 <p class="notice">Cần bucket đã tạo và khóa có quyền đọc, ghi, xóa đối tượng trong bucket. Video quá hạn sẽ bị xóa vĩnh viễn, tính từ lúc ghi hình. Chỉ dọn thư mục bản ghi của ứng dụng; chạy kiểm tra mỗi 5 phút khi máy chủ hoạt động. Khóa được lưu riêng trên máy chủ.</p>
-<p id="cloud-result" role="status"></p><p id="r2-status" role="status"></p></section>
+<p id="local-retention-status" role="status"></p><p id="cloud-result" role="status"></p><p id="r2-status" role="status"></p></section>
 <section class="panel" id="site-panel" hidden><h2>Tên website</h2>
 <form id="site-form"><label>Tên hiển thị <input name="name" maxlength="60" required placeholder="CameraHome"></label><button type="submit" class="accent">Lưu tên</button></form><p id="site-result" role="status"></p></section>
 <section class="panel" id="purge-panel" hidden><h2>Xóa toàn bộ bản ghi</h2>
@@ -985,6 +986,9 @@ accountForm.onsubmit=async event=>{
 async function loadCloudSettings(){
  try{
   const state=await read('/api/storage'),policy=el('cloud-policy-form').elements,fields=el('r2-form').elements;
+  policy.local_days.value=state.local_days||0;
+  const [localMessage,localAt]=(state.local_status||"Chưa bật tự dọn video đã sao lưu trên máy chủ.").split("|");
+  el("local-retention-status").textContent=localMessage+(localAt?" · "+new Date(Number(localAt)*1000).toLocaleString("vi-VN"):"");
   policy.drive_days.value=state.drive_days;policy.drive_enabled.checked=state.drive_enabled;
   if(state.r2){for(const key of ['account_id','bucket','prefix','days'])fields[key].value=state.r2[key];fields.enabled.checked=state.r2.enabled;}
   const [message,at]=(state.r2_status||'Chưa kết nối R2.').split('|');
@@ -993,8 +997,8 @@ async function loadCloudSettings(){
 }
 el('cloud-policy-form').onsubmit=async event=>{
  event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
- try{const response=await fetch('/api/storage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({drive_days:Number(form.elements.drive_days.value),drive_enabled:form.elements.drive_enabled.checked})});
- if(!response.ok)throw new Error(await response.text());el('cloud-result').textContent='Đã lưu chính sách Drive. Tự xóa chỉ áp dụng trong thư mục bản ghi.';}
+ try{const response=await fetch('/api/storage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({local_days:Number(form.elements.local_days.value),drive_days:Number(form.elements.drive_days.value),drive_enabled:form.elements.drive_enabled.checked})});
+ if(!response.ok)throw new Error(await response.text());el('cloud-result').textContent='Đã lưu thời gian giữ bản ghi trên máy chủ và Drive. Video trên máy chủ chỉ được dọn sau khi xác nhận bản sao đám mây.';loadCloudSettings();}
  catch(error){el('cloud-result').textContent=error.message;}finally{button.disabled=false;}
 };
 el('r2-form').onsubmit=async event=>{
