@@ -44,7 +44,7 @@ async fn remote(source:&str)->Result<Remote,Problem>{
 fn command(remote:&Remote)->Command{
  let mut c=Command::new("rclone");
  c.args(["--config",&remote.config,"--contimeout","10s","--timeout","90s","--retries","1","--low-level-retries","5"]).envs(remote.env.iter().cloned()).kill_on_drop(true);
- if remote.config=="/app-data/drive.conf" {c.args(["--tpslimit","1","--tpslimit-burst","1","--drive-pacer-min-sleep","1s","--drive-pacer-burst","1"]);}
+ if remote.config=="/app-data/drive.conf" {c.args(["--tpslimit","1","--tpslimit-burst","1","--drive-pacer-min-sleep","1s","--drive-pacer-burst","1","--fast-list"]);}
  c
 }
 fn transfer_error(stderr:&[u8])->Problem {
@@ -152,14 +152,30 @@ async fn prune_catalog(r:&Remote,days:u32)->Result<(),Problem>{
  data.files.retain(|path,_|clip_time(path).is_some_and(|at|at>=cutoff));
  private(&format!("/app-data/cloud-catalog-{}.json",source_name(r)),&serde_json::to_vec(&data).map_err(|_|error())?).await
 }
-static LIST_CACHE:LazyLock<tokio::sync::Mutex<BTreeMap<String,(std::time::Instant,Vec<String>)>>>=LazyLock::new(Default::default);
-async fn list_day(remote:&Remote,day:&str)->Result<Vec<String>,Problem>{
+static DRIVE_DISCOVERY:LazyLock<tokio::sync::Mutex<()>>=LazyLock::new(Default::default);
+static R2_DISCOVERY:LazyLock<tokio::sync::Mutex<()>>=LazyLock::new(Default::default);
+static LIST_ERRORS:LazyLock<tokio::sync::Mutex<BTreeMap<String,(std::time::Instant,Problem)>>>=LazyLock::new(Default::default);
+async fn catalog_day(remote:&Remote,day:&str)->Option<Vec<String>>{
  let saved=catalog(remote).await;
  let known:Vec<String>=saved.files.keys().filter(|path|path.starts_with(&format!("{day}/"))&&clip_camera(path).is_some()).cloned().collect();
- if saved.complete||saved.days.contains(day)||!known.is_empty(){return Ok(known);}
+ (saved.complete||saved.days.contains(day)||!known.is_empty()).then_some(known)
+}
+static LIST_CACHE:LazyLock<tokio::sync::Mutex<BTreeMap<String,(std::time::Instant,Vec<String>)>>>=LazyLock::new(Default::default);
+async fn list_day(remote:&Remote,day:&str)->Result<Vec<String>,Problem>{
+ if let Some(known)=catalog_day(remote,day).await{return Ok(known);}
+ let _guard=if source_name(remote)=="drive"{DRIVE_DISCOVERY.lock().await}else{R2_DISCOVERY.lock().await};
+ if let Some(known)=catalog_day(remote,day).await{return Ok(known);}
  let key=format!("{}/{}",remote.target,day);
+ {let errors=LIST_ERRORS.lock().await;if let Some((at,problem))=errors.get(&key){if at.elapsed()<Duration::from_secs(30){return Err(*problem);}}}
  {let cache=LIST_CACHE.lock().await;if let Some((at,list))=cache.get(&key){if at.elapsed()<Duration::from_secs(60){return Ok(list.clone());}}}
- let list=list_day_uncached(remote,day).await?;
+ let list=match list_day_uncached(remote,day).await{
+  Ok(list)=>list,
+  Err(problem)=>{
+   let mut errors=LIST_ERRORS.lock().await;errors.retain(|_,(at,_)|at.elapsed()<Duration::from_secs(30));
+   if errors.len()<256{errors.insert(key.clone(),(std::time::Instant::now(),problem));}
+   return Err(problem);
+  }
+ };
  let mut cache=LIST_CACHE.lock().await;
  cache.retain(|_,(at,_)|at.elapsed()<Duration::from_secs(20));
  if cache.len()<256{cache.insert(key,(std::time::Instant::now(),list.clone()));}
