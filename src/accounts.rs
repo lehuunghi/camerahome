@@ -67,6 +67,7 @@ pub fn routes() -> Router<App> {
         .route("/api/login", post(login))
         .route("/api/logout", post(logout))
         .route("/api/accounts", get(list).post(save))
+        .route("/api/site", post(save_site))
 }
 
 pub async fn authorize(mut request: Request, next: Next) -> Response {
@@ -150,7 +151,7 @@ pub async fn still_allowed_live(principal: &Principal, id: &str) -> bool {
 }
 
 async fn session(Extension(user): Extension<Principal>) -> Json<Value> {
-    Json(json!({"user":user.user,"admin":user.admin,"access":user.access}))
+    Json(json!({"user":user.user,"admin":user.admin,"access":user.access,"site_name":site_name().await}))
 }
 
 type Sessions = BTreeMap<String,(String,u64)>;
@@ -208,7 +209,7 @@ async fn revoke(user:&str)->Result<(),Problem> {
     persist_sessions(&items).await
 }
 async fn login_page() -> impl IntoResponse {
-    ([(header::CACHE_CONTROL,"no-store")],Html(include_str!("../web/login.html")))
+    ([(header::CACHE_CONTROL,"no-store")],Html(include_str!("../web/login.html").replace("CameraHome",&escape_html(&site_name().await))))
 }
 #[derive(Deserialize)]
 struct Login {user:String,password:String}
@@ -310,7 +311,7 @@ async fn save(State(app): State<App>, headers: axum::http::HeaderMap, Json(mut d
     let bad = || (StatusCode::BAD_REQUEST, "Kiểm tra tên tài khoản, mật khẩu và quyền camera.");
     if !valid_user(&data.user) || data.access.cameras.len() > 100
         || data.access.cameras.iter().any(|id| !camera_id(id))
-        || (!data.password.is_empty() && (!(6..=128).contains(&data.password.chars().count()) || data.password.chars().any(char::is_control))) {
+        || (!data.password.is_empty() && ((data.password.chars().count()<6 || data.password.len()>128) || data.password.chars().any(char::is_control))) {
         return Err(bad());
     }
     let _lock = app.management.lock().await;
@@ -383,4 +384,23 @@ mod session_tests {
         let value=session_header("test");
         for marker in ["Secure","HttpOnly","SameSite=Lax","Path=/","Max-Age=34560000"] {assert!(value.contains(marker));}
     }
+}
+
+const SITE_FILE:&str="/app-data/site-name";
+async fn site_name()->String {
+    fs::read_to_string(SITE_FILE).await.ok().filter(|s|!s.trim().is_empty()).unwrap_or_else(||"CameraHome".into())
+}
+fn escape_html(value:&str)->String {
+    value.replace('&',"&amp;").replace('<',"&lt;").replace('>',"&gt;").replace('"',"&quot;").replace('\'',"&#39;")
+}
+#[derive(Deserialize)]
+struct SiteInput {name:String}
+async fn save_site(State(app):State<App>,Extension(user):Extension<Principal>,headers:HeaderMap,Json(data):Json<SiteInput>)->Result<StatusCode,Problem> {
+    crate::manage::require_origin(&headers)?;
+    if !user.admin {return Err((StatusCode::FORBIDDEN,"Chỉ admin được đổi tên website."));}
+    let name=data.name.trim();
+    if !(1..=60).contains(&name.chars().count()) || name.chars().any(char::is_control) {return Err((StatusCode::BAD_REQUEST,"Tên website cần từ 1 đến 60 ký tự."));}
+    let _lock=app.management.lock().await;
+    atomic_write(SITE_FILE,name.as_bytes(),0o600,None).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
