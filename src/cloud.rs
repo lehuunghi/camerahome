@@ -46,10 +46,23 @@ fn command(remote:&Remote)->Command{
  c.args(["--config",&remote.config,"--contimeout","8s","--timeout","45s","--retries","1","--low-level-retries","2"]).envs(remote.env.iter().cloned()).kill_on_drop(true);
  c
 }
+fn transfer_error(stderr:&[u8])->Problem {
+ let message=String::from_utf8_lossy(stderr).to_ascii_lowercase();
+ let text=if message.contains("failed to load filters")||message.contains("unknown flag") {
+  "Lệnh sao lưu không tương thích với phiên bản rclone."
+ }else if message.contains("invalid_grant")||message.contains("invalid_client")||message.contains("unauthorized_client"){
+  "Quyền Google Drive đã hết hiệu lực. Kết nối lại bằng mã rclone mới."
+ }else if message.contains("storagequotaexceeded")||message.contains("storage quota"){
+  "Google Drive đã hết dung lượng lưu trữ."
+ }else if message.contains("insufficient")||message.contains("access denied")||message.contains("forbidden"){
+  "Kho lưu trữ từ chối quyền đọc hoặc ghi. Kiểm tra quyền truy cập."
+ }else{"Không truy cập được kho lưu trữ. Kiểm tra kết nối và quyền truy cập."};
+ (StatusCode::BAD_GATEWAY,text)
+}
 async fn output(remote:&Remote,args:&[&str],seconds:u64)->Result<Vec<u8>,Problem>{
  let _slot=JOBS.clone().try_acquire_owned().map_err(|_|(StatusCode::TOO_MANY_REQUESTS,"Kho lưu trữ đang bận. Thử lại sau."))?;
  let result=time::timeout(Duration::from_secs(seconds),command(remote).args(args).output()).await.map_err(|_|error())?.map_err(|_|error())?;
- if result.status.success(){Ok(result.stdout)}else{Err(error())}
+ if result.status.success(){Ok(result.stdout)}else{Err(transfer_error(&result.stderr))}
 }
 pub fn routes()->Router<App>{
  Router::new().route("/api/storage",get(settings).post(save_policy))
@@ -185,6 +198,9 @@ async fn purge_busy()->bool{
  let raw=fs::read("/app-data/purge-status.json").await.ok();
  raw.and_then(|v|serde_json::from_slice::<Value>(&v).ok()).is_some_and(|v|matches!(v["state"].as_str(),Some("pending"|"running")))
 }
+fn settled_file(modified:std::time::SystemTime,now:std::time::SystemTime)->bool{
+ now.duration_since(modified).is_ok_and(|age|age>=Duration::from_secs(60))
+}
 async fn local_files(app:&App,days:u32)->Result<Vec<String>,Problem>{
  let root=app.recordings.clone();
  tokio::task::spawn_blocking(move||{
@@ -193,7 +209,8 @@ async fn local_files(app:&App,days:u32)->Result<Vec<String>,Problem>{
    let day=item.file_name().to_string_lossy().into_owned();
    if !item.file_type()?.is_dir()||!crate::valid_recording_day(&day){continue;}
    for path in crate::clips_for_day(root.clone(),crate::Selection{day,camera:None})? {
-    if clip_camera(&path).is_some()&&(days==0||clip_time(&path).is_some_and(|t|t>=cutoff)){result.push(path);}
+    let settled=root.join(&path).metadata().ok().and_then(|m|m.modified().ok()).is_some_and(|modified|settled_file(modified,std::time::SystemTime::now()));
+    if settled&&clip_camera(&path).is_some()&&(days==0||clip_time(&path).is_some_and(|t|t>=cutoff)){result.push(path);}
    }
   }Ok::<_,std::io::Error>(result)
  }).await.map_err(|_|error())?.map_err(|_|error())
@@ -224,7 +241,7 @@ async fn sync(app:&App,source:&str,days:u32)->Result<(),Problem>{
  let copied=if !files.is_empty(){
   let file=format!("/app-data/cloud-upload-{source}.txt");
   private(&file,files.join("\n").as_bytes()).await?;
-  let result=output(&r,&["copy",app.recordings.to_str().ok_or_else(error)?,&r.target,"--files-from",&file,"--min-age","1m","--transfers","2"],240).await;
+  let result=output(&r,&["copy",app.recordings.to_str().ok_or_else(error)?,&r.target,"--files-from",&file,"--transfers","2"],240).await;
   let _=fs::remove_file(file).await;result.map(|_|())
  }else{Ok(())};
  let expired=expire(&r,days,source).await;
@@ -280,8 +297,8 @@ pub async fn backup_worker(app:App){
  for source in ["drive","r2"]{
   let (enabled,days)=if source=="drive"{(p.drive_enabled,p.drive_days)}else{match r2().await {Ok(c)=>(c.enabled,c.days),Err(_)=>continue}};
   if !enabled||remote(source).await.is_err(){continue;}
-  let ok=sync(&app,source,days).await.is_ok();
-  let message=if ok{"Đã sao lưu và kiểm tra hạn lưu trữ"}else{"Sao lưu hoặc dọn hạn lưu trữ chưa hoàn tất. Sẽ thử lại"};
+  let outcome=sync(&app,source,days).await;
+  let message=match outcome {Ok(())=>"Đã sao lưu và kiểm tra hạn lưu trữ".to_owned(),Err((_,reason))=>format!("{reason} Sẽ thử lại ở lượt sau.")};
   let file=format!("/app-data/{source}-status");
   let _=private(&file,format!("{message}|{}",chrono::Utc::now().timestamp()).as_bytes()).await;
  }
@@ -306,6 +323,16 @@ pub async fn backup_worker(app:App){
  assert!(copies_confirmed(path,100,&[good.clone(),good]));
 }
  #[test]fn local_expiry_never_deletes_when_disabled(){assert!(!old_enough(0,1000000,0));assert!(!old_enough(100000,100001,1));assert!(old_enough(0,100000,1));}
+ #[test]fn only_settled_files_are_uploaded(){
+ let now=std::time::UNIX_EPOCH+Duration::from_secs(1000);
+ assert!(!settled_file(now-Duration::from_secs(59),now));
+ assert!(settled_file(now-Duration::from_secs(60),now));
+ assert!(!settled_file(now+Duration::from_secs(1),now));
+}
+ #[test]fn safe_failure_reason(){
+ let (_,reason)=transfer_error(b"Failed to load filters: private credential");
+ assert!(reason.contains("rclone"));assert!(!reason.contains("private credential"));
+}
  #[test]fn ranges(){assert_eq!(byte_range(Some("bytes=10-19"),100),Ok((10,19,true)));assert_eq!(byte_range(Some("bytes=-10"),100),Ok((90,99,true)));assert_eq!(byte_range(Some("bytes=90-"),100),Ok((90,99,true)));assert!(byte_range(Some("bytes=100-"),100).is_err());assert!(byte_range(Some("bytes=0-1,4-5"),100).is_err());}
  #[test]fn paths(){assert_eq!(clip_camera("2026-11-22/07/bep/01.02.mp4"),Some("bep"));for bad in ["2026-11-22/07/../01.02.mp4","2026-11-22/99/bep/01.02.mp4","2026-11-22/07/bep/../../key","2026-02-30/07/bep/01.02.mp4"]{assert!(clip_camera(bad).is_none());}}
  #[test]fn retention_uses_recording_time(){let at=clip_time("2026-11-22/07/bep/01.02.mp4").unwrap();assert_eq!(chrono::DateTime::from_timestamp(at,0).unwrap().to_rfc3339(),"2026-11-22T07:01:02+00:00");assert_eq!(Policy::default().drive_days,0);}
