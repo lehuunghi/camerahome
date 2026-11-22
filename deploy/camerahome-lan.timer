@@ -1,0 +1,8 @@
+[Unit]
+Description=Discover camera LAN addresses every minute
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=60s
+Unit=camerahome-lan.service
+[Install]
+WantedBy=timers.target
