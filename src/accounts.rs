@@ -103,7 +103,13 @@ pub async fn authorize(mut request: Request, next: Next) -> Response {
         return (StatusCode::FORBIDDEN, "Tài khoản không có quyền thực hiện thao tác này.").into_response();
     }
     request.extensions_mut().insert(principal);
-    next.run(request).await
+    let mut response=next.run(request).await;
+    if logged.is_some() {
+        if let Some(id)=sid {
+            if let Ok(cookie)=session_header(&id).parse() {response.headers_mut().append(header::SET_COOKIE,cookie);}
+        }
+    }
+    response
 }
 
 fn permits(p: &Principal, method: &Method, path: &str) -> bool {
@@ -147,12 +153,32 @@ async fn session(Extension(user): Extension<Principal>) -> Json<Value> {
     Json(json!({"user":user.user,"admin":user.admin,"access":user.access}))
 }
 
-type Sessions = BTreeMap<String,(String,Instant)>;
-static SESSIONS: LazyLock<tokio::sync::Mutex<Sessions>> = LazyLock::new(Default::default);
+type Sessions = BTreeMap<String,(String,u64)>;
+const SESSION_FILE: &str = "/app-data/sessions.json";
+static SESSIONS: LazyLock<tokio::sync::Mutex<Option<Sessions>>> = LazyLock::new(Default::default);
+fn epoch() -> u64 {std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs()}
+async fn sessions() -> Result<tokio::sync::MappedMutexGuard<'static,Sessions>,Problem> {
+    let mut guard=SESSIONS.lock().await;
+    if guard.is_none() {
+        let loaded=match fs::read(SESSION_FILE).await {
+            Ok(raw)=>serde_json::from_slice::<Sessions>(&raw).map_err(|_|internal())?,
+            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>BTreeMap::new(),
+            Err(_)=>return Err(internal()),
+        };
+        *guard=Some(loaded);
+    }
+    Ok(tokio::sync::MutexGuard::map(guard,|value|value.as_mut().unwrap()))
+}
+async fn persist_sessions(items:&Sessions)->Result<(),Problem> {
+    atomic_write(SESSION_FILE,&serde_json::to_vec(items).map_err(|_|internal())?,0o600,None).await
+}
+fn session_header(id:&str)->String {
+    format!("{COOKIE}={id}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age={SESSION_TTL}")
+}
 static ATTEMPTS: LazyLock<tokio::sync::Mutex<BTreeMap<String,(Instant,u8)>>> = LazyLock::new(Default::default);
 static VERIFY: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
 const COOKIE: &str = "__Host-camerahome";
-const SESSION_TTL: u64 = 43200;
+const SESSION_TTL: u64 = 400*24*60*60;
 
 fn equal(a:&str,b:&str)->bool {
     a.len()==b.len() && a.bytes().zip(b.bytes()).fold(0u8,|diff,(x,y)|diff|(x^y))==0
@@ -164,10 +190,19 @@ fn session_cookie(headers:&HeaderMap)->Option<String> {
     })
 }
 async fn session_user(id:&str)->Option<String> {
-    SESSIONS.lock().await.get(id).filter(|(_,expiry)|*expiry>Instant::now()).map(|(name,_)|name.clone())
+    let mut items=sessions().await.ok()?;
+    let now=epoch();
+    let (name,expiry)=items.get(id).filter(|(_,expiry)|*expiry>now)?.clone();
+    if expiry.saturating_sub(now)<SESSION_TTL-86400 {
+        items.insert(id.to_owned(),(name.clone(),now+SESSION_TTL));
+        if persist_sessions(&items).await.is_err(){return None;}
+    }
+    Some(name)
 }
-async fn revoke(user:&str) {
-    SESSIONS.lock().await.retain(|_,(name,_)|name!=user);
+async fn revoke(user:&str)->Result<(),Problem> {
+    let mut items=sessions().await?;
+    items.retain(|_,(name,_)|name!=user);
+    persist_sessions(&items).await
 }
 async fn login_page() -> impl IntoResponse {
     ([(header::CACHE_CONTROL,"no-store")],Html(include_str!("../web/login.html")))
@@ -198,18 +233,19 @@ async fn login(headers:HeaderMap,Json(data):Json<Login>)->Result<Response,Proble
     if !enabled || !hash.is_some_and(|expected|equal(expected,&computed)) {return Err(bad);}
     let mut bytes=[0u8;32];getrandom::fill(&mut bytes).map_err(|_|internal())?;
     let id=bytes.iter().map(|v|format!("{v:02x}")).collect::<String>();
-    let mut sessions=SESSIONS.lock().await;
-    sessions.retain(|_,(_,expiry)|*expiry>now);
+    let mut sessions=sessions().await?;
+    sessions.retain(|_,(_,expiry)|*expiry>epoch());
     if let Some(old)=session_cookie(&headers) {sessions.remove(&old);}
     if sessions.len()>=4096 {return Err((StatusCode::SERVICE_UNAVAILABLE,"Thử lại sau."));}
-    sessions.insert(id.clone(),(data.user,now+Duration::from_secs(SESSION_TTL)));
-    let cookie=format!("{COOKIE}={id}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age={SESSION_TTL}");
+    sessions.insert(id.clone(),(data.user,epoch()+SESSION_TTL));
+    persist_sessions(&sessions).await?;
+    let cookie=session_header(&id);
     Ok(([(header::SET_COOKIE,cookie),(header::CACHE_CONTROL,"no-store".to_owned())],StatusCode::NO_CONTENT).into_response())
 }
 
 async fn logout(headers:HeaderMap)->Result<Response,Problem> {
     crate::manage::require_origin(&headers)?;
-    if let Some(id)=session_cookie(&headers) {SESSIONS.lock().await.remove(&id);}
+    if let Some(id)=session_cookie(&headers) {let mut items=sessions().await?;items.remove(&id);persist_sessions(&items).await?;}
     let expired=format!("{COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=0");
     Ok(([(header::SET_COOKIE,expired),(header::CACHE_CONTROL,"no-store".to_owned())],StatusCode::NO_CONTENT).into_response())
 }
@@ -271,7 +307,7 @@ async fn save(State(app): State<App>, headers: axum::http::HeaderMap, Json(mut d
     let bad = || (StatusCode::BAD_REQUEST, "Kiểm tra tên tài khoản, mật khẩu và quyền camera.");
     if !valid_user(&data.user) || data.access.cameras.len() > 100
         || data.access.cameras.iter().any(|id| !camera_id(id))
-        || (!data.password.is_empty() && (!(12..=128).contains(&data.password.len()) || data.password.chars().any(char::is_control))) {
+        || (!data.password.is_empty() && (!(6..=128).contains(&data.password.chars().count()) || data.password.chars().any(char::is_control))) {
         return Err(bad());
     }
     let _lock = app.management.lock().await;
@@ -283,7 +319,7 @@ async fn save(State(app): State<App>, headers: axum::http::HeaderMap, Json(mut d
         let mut updated=format!("admin:{hash}\n");
         for line in original.lines().filter(|line|!line.starts_with("admin:")) {updated.push_str(line);updated.push('\n');}
         atomic_write(USERS,updated.as_bytes(),0o640,Some(group)).await?;
-        revoke("admin").await;
+        revoke("admin").await?;
         return Ok(StatusCode::NO_CONTENT);
     }
     let cfg = crate::manage::read_config().await?;
@@ -316,6 +352,6 @@ async fn save(State(app): State<App>, headers: axum::http::HeaderMap, Json(mut d
         let _ = atomic_write(POLICY,&previous,0o600,None).await;
         return Err(error);
     }
-    if invalidate {revoke(&username).await;}
+    if invalidate {revoke(&username).await?;}
     Ok(StatusCode::NO_CONTENT)
 }
