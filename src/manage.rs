@@ -39,6 +39,7 @@ pub fn routes() -> Router<App> {
         .route("/api/cameras/{id}/settings", get(camera_settings).post(change_camera_settings).delete(delete_camera))
         .route("/api/drive", get(drive_status).post(start_drive))
         .route("/api/clips/cleanup", get(cleanup_preview).post(cleanup_recordings))
+        .route("/api/clips/purge", get(purge_status).post(purge_all))
         .route("/drive/callback", get(finish_drive))
 }
 
@@ -571,6 +572,7 @@ pub async fn backup_worker(app: App) {
     tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
     loop {
         tick.tick().await;
+        if matches!(purge_status().await.0["state"].as_str(),Some("pending"|"running")) {continue;}
         let Ok(_guard) = app.drive_lock.try_lock() else { continue; };
         let Ok(folder) = fs::read_to_string(DRIVE_FOLDER).await else { continue; };
         let dest = format!("drive:{folder}/recordings");
@@ -582,4 +584,32 @@ pub async fn backup_worker(app: App) {
         let message = if success { "Lượt sao lưu hoàn tất" } else { "Lượt sao lưu lỗi hoặc vượt thời gian. Sẽ thử lại." };
         let _ = write_private(DRIVE_STATUS, &format!("{message}|{when}")).await;
     }
+}
+
+const PURGE_REQUEST:&str="/app-data/purge-request.json";
+const PURGE_STATUS:&str="/app-data/purge-status.json";
+async fn purge_status()->Json<Value> {
+    let status=fs::read(PURGE_STATUS).await.ok().and_then(|b|serde_json::from_slice::<Value>(&b).ok()).unwrap_or_else(||json!({"state":"idle"}));
+    Json(status)
+}
+#[derive(Deserialize)]
+struct PurgeInput {confirm:String}
+async fn purge_all(State(app):State<App>,Extension(user):Extension<crate::accounts::Principal>,headers:HeaderMap,Json(input):Json<PurgeInput>)->Result<(StatusCode,Json<Value>),Problem> {
+    require_origin(&headers)?;
+    if !user.admin {return Err(problem(StatusCode::FORBIDDEN,"Chỉ admin được xóa toàn bộ bản ghi."));}
+    if input.confirm!="XOA TAT CA" {return Err(problem(StatusCode::BAD_REQUEST,"Nhập XOA TAT CA để xác nhận xóa vĩnh viễn."));}
+    let _lock=app.management.lock().await;
+    let _backup=app.drive_lock.try_lock().map_err(|_|problem(StatusCode::CONFLICT,"Đang sao lưu Drive. Hãy thử lại sau khi sao lưu xong."))?;
+    let current=purge_status().await.0;
+    if fs::try_exists(PURGE_REQUEST).await.unwrap_or(true) || matches!(current["state"].as_str(),Some("pending"|"running")) {
+        return Err(problem(StatusCode::CONFLICT,"Đang xóa toàn bộ bản ghi. Vui lòng chờ."));
+    }
+    let job=chrono::Utc::now().timestamp_millis().to_string();
+    let status=json!({"state":"pending","job":job,"message":"Đang chờ dừng ghi hình và dọn toàn bộ video trên máy chủ.","at":chrono::Utc::now().timestamp()});
+    write_private(PURGE_STATUS,&status.to_string()).await.map_err(|_|internal())?;
+    if write_private(PURGE_REQUEST,&json!({"job":job,"confirm":"XOA TAT CA"}).to_string()).await.is_err() {
+        let _=write_private(PURGE_STATUS,&json!({"state":"error","message":"Không gửi được yêu cầu xóa."}).to_string()).await;
+        return Err(internal());
+    }
+    Ok((StatusCode::ACCEPTED,Json(status)))
 }
