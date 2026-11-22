@@ -1,4 +1,5 @@
 mod manage;
+mod mac;
 mod accounts;
 use axum::{extract::{Extension, Query, State}, http::{header, StatusCode}, response::{Html, IntoResponse}, routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
@@ -146,6 +147,7 @@ async fn main() {
         status: env::var("STATUS_DIR").unwrap_or_else(|_| "/backup-status".into()).into(),
     };
     tokio::spawn(manage::backup_worker(app.clone()));
+    tokio::spawn(mac::worker(app.clone()));
     let router = Router::new()
         .merge(manage::routes())
         .merge(accounts::routes())

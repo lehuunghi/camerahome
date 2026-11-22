@@ -46,6 +46,9 @@ pub fn routes() -> Router<App> {
 struct CameraInput {
     id: String,
     ip: Ipv4Addr,
+    #[serde(default)]
+    mac: Option<String>,
+    auto_ip: Option<bool>,
     username: String,
     password: String,
     #[serde(flatten)]
@@ -54,6 +57,7 @@ struct CameraInput {
 
 async fn add_camera(State(app): State<App>, headers: HeaderMap, Json(input): Json<CameraInput>) -> Result<StatusCode, Problem> {
     require_origin(&headers)?;
+    let mac = crate::mac::validate(input.mac.as_deref())?;
     let subnet = env::var("CAMERA_SUBNET").unwrap_or_else(|_| "192.168.88".into());
     let address = input.ip.octets();
     if !camera_id(&input.id) || input.id.len() > 48 || (input.id.ends_with("__compact") || input.id.ends_with("__1080")) || format!("{}.{}.{}", address[0], address[1], address[2]) != subnet
@@ -71,6 +75,7 @@ async fn add_camera(State(app): State<App>, headers: HeaderMap, Json(input): Jso
     cameras.insert(input.id.clone(), json!({}));
     update_settings(&mut config, &input.id, &url, input.settings)?;
     save_config(&app, &config).await?;
+    crate::mac::set(&input.id, mac, input.auto_ip.unwrap_or(true)).await?;
     Ok(StatusCode::CREATED)
 }
 
@@ -94,7 +99,7 @@ fn object_at<'a>(value: &'a mut Value, name: &str) -> Result<&'a mut serde_json:
         .as_object_mut().ok_or_else(internal)
 }
 
-fn camera_source<'a>(config: &'a Value, id: &str) -> Option<&'a str> {
+pub(crate) fn camera_source<'a>(config: &'a Value, id: &str) -> Option<&'a str> {
     config["cameras"].get(id)?;
     let stream = &config["go2rtc"]["streams"][id];
     let source = stream.as_str().or_else(|| stream[0].as_str())
@@ -157,7 +162,8 @@ async fn camera_settings(State(app): State<App>, Extension(user): Extension<crat
     let mode = if !cry {"motion"} else if camera["record"]["motion"]["days"].as_f64() == Some(0.0) {"crying"} else {"both"};
     let compact = camera["ffmpeg"]["inputs"][0]["path"].as_str().is_some_and(|path| path.ends_with("__compact"));
     let ip = if user.admin { camera_source(&config, &id).and_then(|url| reqwest::Url::parse(url).ok()).and_then(|url| url.host_str().map(str::to_owned)) } else { None };
-    Ok(Json(json!({"mode":mode,"compact":compact,"ip":ip})))
+    let identity = if user.admin { crate::mac::identity(&id).await? } else { json!(null) };
+    Ok(Json(json!({"mode":mode,"compact":compact,"ip":ip,"identity":identity})))
 }
 
 #[derive(Deserialize)]
@@ -165,6 +171,8 @@ struct CameraEdit {
     #[serde(flatten)]
     settings: CameraSettings,
     connection: Option<CameraConnection>,
+    mac: Option<String>,
+    auto_ip: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -176,6 +184,9 @@ async fn change_camera_settings(State(app): State<App>, Extension(user): Extensi
     let mut config = read_config().await?;
     let url = camera_source(&config, &id).filter(|_| camera_id(&id)).map(str::to_owned)
         .ok_or_else(|| problem(StatusCode::NOT_FOUND, "Camera này chưa có cấu hình Tapo tương thích."))?;
+    let identity_change = edit.mac.is_some() || edit.auto_ip.is_some();
+    if identity_change && !user.admin { return Err(problem(StatusCode::FORBIDDEN, "Chỉ admin được đổi MAC.")); }
+    let mac = crate::mac::validate(edit.mac.as_deref())?;
     let url = if let Some(connection) = edit.connection {
         if !user.admin { return Err(problem(StatusCode::FORBIDDEN, "Chỉ admin được đổi kết nối camera.")); }
         let [a,b,c,d] = connection.ip.octets();
@@ -195,6 +206,7 @@ async fn change_camera_settings(State(app): State<App>, Extension(user): Extensi
     } else { url };
     update_settings(&mut config, &id, &url, edit.settings)?;
     save_config(&app, &config).await?;
+    if identity_change { crate::mac::set(&id, mac, edit.auto_ip.unwrap_or(true)).await?; }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -215,10 +227,11 @@ async fn delete_camera(State(app): State<App>, Extension(user): Extension<crate:
         }
     }
     save_config(&app,&config).await?;
+    crate::mac::remove(&id).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn save_config(app: &App, config: &Value) -> Result<(), Problem> {
+pub(crate) async fn save_config(app: &App, config: &Value) -> Result<(), Problem> {
     let payload = serde_yaml::to_string(config).map_err(|_| internal())?;
     let response = app.client.post(format!("{}/api/config/save?save_option=restart", app.frigate))
         .timeout(Duration::from_secs(20)).header(header::CONTENT_TYPE, "text/plain").body(payload).send().await

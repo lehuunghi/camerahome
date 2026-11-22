@@ -179,6 +179,9 @@ video { border:0; }
 <div id="view-admin" hidden><div class="view-heading"><h1>Quản trị</h1></div>
 <section class="panel" id="camera-settings" hidden><h2 id="settings-title">Cài đặt camera</h2>
 <form id="settings-form">
+<label data-camera-connection>MAC camera <input name="mac" placeholder="AA:BB:CC:DD:EE:FF · trống để tự học" maxlength="17"></label>
+<label data-camera-connection class="check"><input name="auto_ip" type="checkbox" checked> Tự dò IP theo MAC</label>
+<p data-camera-connection id="mac-status" class="notice"></p>
 <label data-camera-connection>Địa chỉ IP <input name="ip" inputmode="decimal"></label>
 <label data-camera-connection>Tên Camera Account <input name="cameraUser" autocomplete="off" placeholder="Để trống để giữ nguyên"></label>
 <label data-camera-connection>Mật khẩu Camera Account <input name="cameraPassword" type="password" autocomplete="new-password"></label>
@@ -190,6 +193,8 @@ video { border:0; }
 <section class="panel" id="add"><h2>Thêm camera Tapo</h2><p class="notice">Camera cần ở mạng 192.168.88.x và hỗ trợ RTSP. Dùng Camera Account được tạo trong cài đặt nâng cao của app Tapo.</p>
 <form id="camera-form">
 <label>Mã camera <input name="id" placeholder="tapo_88_9" pattern="[A-Za-z0-9_\-]{1,48}" required maxlength="48"></label>
+<label>MAC camera <input name="mac" placeholder="Để trống để tự học MAC" maxlength="17"></label>
+<label class="check"><input name="auto_ip" type="checkbox" checked> Tự dò IP theo MAC</label>
 <label>IP camera <input name="ip" placeholder="192.168.88.9" required inputmode="decimal" maxlength="15"></label>
 <label>Tên Camera Account <input name="username" required maxlength="128" autocomplete="off"></label>
 <label>Mật khẩu Camera Account <input name="password" type="password" required maxlength="128" autocomplete="new-password"></label>
@@ -533,6 +538,9 @@ async function openSettings(id) {
     const settings = await read('/api/cameras/' + encodeURIComponent(id) + '/settings');
     if (id !== managing) return;
     form.elements.ip.value=settings.ip||'';
+    form.elements.mac.value=settings.identity?.mac||'';
+    form.elements.auto_ip.checked=settings.identity?.auto_ip!==false;
+    el('mac-status').textContent=settings.identity?.status||'Đang chờ dò MAC trong LAN.';
     form.dataset.originalIp=settings.ip||'';
     el('settings-delete').hidden=!session.admin;
     form.elements.mode.value = settings.mode;
@@ -550,6 +558,7 @@ el('settings-form').onsubmit = async event => {
   try {
     const {mode,compact,ip,cameraUser,cameraPassword}=form.elements;
     const payload={mode:mode.value,compact:compact.checked};
+    if(session.admin){payload.mac=form.elements.mac.value.trim();payload.auto_ip=form.elements.auto_ip.checked;}
     if (session.admin && (ip.value.trim()!==form.dataset.originalIp || cameraUser.value || cameraPassword.value)) {
       if (!ip.value.trim() || !cameraUser.value || !cameraPassword.value) throw new Error('Nhập IP, tên và mật khẩu Camera Account để đổi kết nối.');
       payload.connection={ip:ip.value.trim(),username:cameraUser.value,password:cameraPassword.value};
@@ -589,6 +598,7 @@ async function backup() {
 async function submit(form, endpoint) {
   const body = Object.fromEntries(new FormData(form));
   if (form.elements.compact) body.compact = form.elements.compact.checked;
+  if (form.elements.auto_ip) body.auto_ip = form.elements.auto_ip.checked;
   const response = await fetch(endpoint, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   if (!response.ok) throw new Error((await response.text()).slice(0, 300) || 'Yêu cầu thất bại.');
   return response;
