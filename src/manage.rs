@@ -233,6 +233,9 @@ async fn delete_camera(State(app): State<App>, Extension(user): Extension<crate:
 }
 
 pub(crate) async fn save_config(app: &App, config: &Value) -> Result<(), Problem> {
+    if matches!(purge_status().await.0["state"].as_str(),Some("pending"|"running")) {
+        return Err(problem(StatusCode::CONFLICT,"Đang xóa bản ghi. Chờ hoàn tất trước khi đổi cấu hình camera."));
+    }
     let payload = serde_yaml::to_string(config).map_err(|_| internal())?;
     let response = app.client.post(format!("{}/api/config/save?save_option=restart", app.frigate))
         .timeout(Duration::from_secs(20)).header(header::CONTENT_TYPE, "text/plain").body(payload).send().await
@@ -574,6 +577,7 @@ pub async fn backup_worker(app: App) {
         tick.tick().await;
         if matches!(purge_status().await.0["state"].as_str(),Some("pending"|"running")) {continue;}
         let Ok(_guard) = app.drive_lock.try_lock() else { continue; };
+        if matches!(purge_status().await.0["state"].as_str(),Some("pending"|"running")) {continue;}
         let Ok(folder) = fs::read_to_string(DRIVE_FOLDER).await else { continue; };
         let dest = format!("drive:{folder}/recordings");
         let outcome = Command::new("rclone").args(["--config", DRIVE_CONFIG, "copy"])
