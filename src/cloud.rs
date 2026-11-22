@@ -20,8 +20,8 @@ async fn private(path:&str,bytes:&[u8])->Result<(),Problem>{
 struct R2 {account_id:String,bucket:String,prefix:String,access_key:String,secret_key:String,days:u32,enabled:bool}
 #[derive(Clone,Serialize,Deserialize)]
 #[serde(default)]
-struct Policy {drive_days:u32,drive_enabled:bool}
-impl Default for Policy{fn default()->Self{Self{drive_days:0,drive_enabled:true}}}
+struct Policy {drive_days:u32,drive_enabled:bool,local_days:u32}
+impl Default for Policy{fn default()->Self{Self{drive_days:0,drive_enabled:true,local_days:0}}}
 async fn r2()->Result<R2,Problem>{serde_json::from_slice(&fs::read(R2_FILE).await.map_err(|_|(StatusCode::CONFLICT,"Chưa kết nối Cloudflare R2."))?).map_err(|_|error())}
 async fn policy()->Policy{fs::read(POLICY).await.ok().and_then(|v|serde_json::from_slice(&v).ok()).unwrap_or_default()}
 struct Remote {config:String,target:String,env:Vec<(String,String)>}
@@ -61,11 +61,11 @@ async fn settings()->Json<Value>{
  let policy=policy().await;
  let r=r2().await.ok();
  let last=fs::read_to_string("/app-data/r2-status").await.unwrap_or_default();
- Json(json!({"drive_days":policy.drive_days,"drive_enabled":policy.drive_enabled,"r2":r.map(|c|json!({"account_id":c.account_id,"bucket":c.bucket,"prefix":c.prefix,"days":c.days,"enabled":c.enabled,"configured":true})),"r2_status":last}))
+ Json(json!({"drive_days":policy.drive_days,"drive_enabled":policy.drive_enabled,"local_days":policy.local_days,"r2":r.map(|c|json!({"account_id":c.account_id,"bucket":c.bucket,"prefix":c.prefix,"days":c.days,"enabled":c.enabled,"configured":true})),"r2_status":last,"local_status":fs::read_to_string("/app-data/local-retention-status").await.unwrap_or_default()}))
 }
 async fn save_policy(State(app):State<App>,headers:HeaderMap,Json(policy):Json<Policy>)->Result<StatusCode,Problem>{
  crate::manage::require_origin(&headers)?;
- if policy.drive_days>3650 {return Err(bad());}
+ if policy.drive_days>3650 || policy.local_days>3650 {return Err(bad());}
  let _lock=app.drive_lock.lock().await;
  private(POLICY,&serde_json::to_vec(&policy).map_err(|_|bad())?).await?;
  Ok(StatusCode::NO_CONTENT)
@@ -230,6 +230,43 @@ async fn sync(app:&App,source:&str,days:u32)->Result<(),Problem>{
  let expired=expire(&r,days,source).await;
  copied?;expired
 }
+fn old_enough(at:i64,now:i64,days:u32)->bool {days>0&&at<now-i64::from(days)*86400}
+async fn cleanup_local(app:&App,p:&Policy)->Result<usize,Problem>{
+ if p.local_days==0{return Ok(0);}
+ let mut sources=Vec::new();
+ if p.drive_enabled&&remote("drive").await.is_ok(){sources.push(remote("drive").await?);}
+ if let Ok(c)=r2().await {if c.enabled{sources.push(r2_remote(&c));}}
+ if sources.is_empty(){return Ok(0);}
+ let now=chrono::Utc::now().timestamp();
+ let candidates:Vec<String>=local_files(app,0).await?.into_iter().filter(|path|clip_time(path).is_some_and(|at|old_enough(at,now,p.local_days))).collect();
+ let days:std::collections::BTreeSet<_>=candidates.iter().filter_map(|p|p.split('/').next()).collect();
+ let mut verified:Vec<BTreeMap<String,u64>>=Vec::new();
+ for source in &sources {
+  let mut sizes=BTreeMap::new();
+  for day in &days {
+   let target=format!("{}/{}",source.target,day);
+   let Ok(raw)=output(source,&["lsjson",&target,"--recursive","--files-only","--no-modtime","--no-mimetype"],60).await else {continue;};
+   let rows:Vec<Value>=serde_json::from_slice(&raw).map_err(|_|error())?;
+   for row in rows {
+    if let (Some(path),Some(size))=(row["Path"].as_str(),row["Size"].as_u64()){
+     let relative=format!("{day}/{path}");
+     if clip_camera(&relative).is_some(){sizes.insert(relative,size);}
+    }
+   }
+  }
+  verified.push(sizes);
+ }
+ let mut removed=0;
+ for path in candidates {
+  let file=app.recordings.join(&path);
+  let Ok(meta)=fs::symlink_metadata(&file).await else{continue;};
+  if !meta.file_type().is_file()||meta.len()==0{continue;}
+  if verified.iter().all(|copies|copies.get(&path)==Some(&meta.len())){
+   if fs::remove_file(&file).await.is_ok(){removed+=1;}
+  }
+ }
+ Ok(removed)
+}
 pub async fn backup_worker(app:App){
  let mut tick=time::interval(Duration::from_secs(300));tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
  loop {
@@ -245,10 +282,18 @@ pub async fn backup_worker(app:App){
   let file=format!("/app-data/{source}-status");
   let _=private(&file,format!("{message}|{}",chrono::Utc::now().timestamp()).as_bytes()).await;
  }
+ if p.local_days>0 {
+  let message=match cleanup_local(&app,&p).await{
+   Ok(removed)=>format!("Đã dọn {removed} video quá hạn có bản sao xác nhận trên các nguồn đám mây đang bật. Video chưa xác nhận sao lưu được giữ lại."),
+   Err(_)=>"Chưa xác nhận được bản sao đám mây. Giữ nguyên video trên máy chủ.".to_owned()
+  };
+  let _=private("/app-data/local-retention-status",format!("{message}|{}",chrono::Utc::now().timestamp()).as_bytes()).await;
+ }
  }
 }
 #[cfg(test)]mod tests {
  use super::*;
+ #[test]fn local_expiry_never_deletes_when_disabled(){assert!(!old_enough(0,1000000,0));assert!(!old_enough(100000,100001,1));assert!(old_enough(0,100000,1));}
  #[test]fn ranges(){assert_eq!(byte_range(Some("bytes=10-19"),100),Ok((10,19,true)));assert_eq!(byte_range(Some("bytes=-10"),100),Ok((90,99,true)));assert_eq!(byte_range(Some("bytes=90-"),100),Ok((90,99,true)));assert!(byte_range(Some("bytes=100-"),100).is_err());assert!(byte_range(Some("bytes=0-1,4-5"),100).is_err());}
  #[test]fn paths(){assert_eq!(clip_camera("2026-11-22/07/bep/01.02.mp4"),Some("bep"));for bad in ["2026-11-22/07/../01.02.mp4","2026-11-22/99/bep/01.02.mp4","2026-11-22/07/bep/../../key","2026-02-30/07/bep/01.02.mp4"]{assert!(clip_camera(bad).is_none());}}
  #[test]fn retention_uses_recording_time(){let at=clip_time("2026-11-22/07/bep/01.02.mp4").unwrap();assert_eq!(chrono::DateTime::from_timestamp(at,0).unwrap().to_rfc3339(),"2026-11-22T07:01:02+00:00");assert_eq!(Policy::default().drive_days,0);}
