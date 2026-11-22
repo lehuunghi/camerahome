@@ -1,4 +1,5 @@
 mod manage;
+mod cloud;
 mod mac;
 mod accounts;
 use axum::{extract::{Extension, Query, State}, http::{header, StatusCode}, response::{Html, IntoResponse}, routing::get, Json, Router};
@@ -146,10 +147,11 @@ async fn main() {
         oauth: Default::default(),
         status: env::var("STATUS_DIR").unwrap_or_else(|_| "/backup-status".into()).into(),
     };
-    tokio::spawn(manage::backup_worker(app.clone()));
+    tokio::spawn(cloud::backup_worker(app.clone()));
     tokio::spawn(mac::worker(app.clone()));
     let router = Router::new()
         .merge(manage::routes())
+        .merge(cloud::routes())
         .merge(accounts::routes())
         .route("/", get(|| async { Html(include_str!("../web/index.html")) }))
         .route("/api/cameras", get(cameras))
