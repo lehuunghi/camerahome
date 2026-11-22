@@ -168,6 +168,7 @@ video { border:0; }
 </div>
 <div id="view-recordings" class="replay-layout" hidden><div class="view-heading"><h1>Xem lại</h1></div>
 <section class="panel" id="recordings"><h2 id="recordings-title">Xem lại</h2>
+<div class="filters"><label>Nguồn xem lại <select id="recording-source"><option value="local">Máy chủ</option><option value="drive">Google Drive</option><option value="r2">Cloudflare R2</option></select></label></div>
 <div class="filters recording-filters"><label><input aria-label="Chọn ngày" id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
 <div class="video-frame" id="replay-frame"><video id="player" playsinline hidden></video></div><div id="replay-download" hidden><a id="download-clip" download aria-label="Tải clip đang xem về máy" title="Tải clip đang xem về máy"><span aria-hidden="true">⤓</span></a></div>
 <div class="timeline-track" id="timeline-marks" aria-hidden="true"></div>
@@ -214,10 +215,27 @@ video { border:0; }
 <label>OAuth Client Secret <input name="client_secret" type="password" required autocomplete="new-password" maxlength="300"></label>
 <button class="accent" type="submit">Kết nối Google Drive</button>
 </form><p id="drive-result" role="status"></p></section>
+<section class="panel" id="cloud-panel" hidden><h2>Lưu trữ đám mây</h2>
+<h3>Google Drive</h3><form id="cloud-policy-form">
+<label class="check"><input name="drive_enabled" type="checkbox" checked> Sao lưu lên Google Drive</label>
+<label>Số ngày giữ video trên Drive <input name="drive_days" type="number" min="0" max="3650" value="0" required></label>
+<button type="submit">Lưu tùy chọn Drive</button></form>
+<p class="notice">0 = không tự xóa trên Drive. Khi đặt số ngày, video quá hạn trong thư mục bản ghi sẽ bị xóa vĩnh viễn.</p>
+<h3>Cloudflare R2</h3><form id="r2-form">
+<label>Account ID <input name="account_id" maxlength="32" required autocomplete="off"></label>
+<label>Bucket <input name="bucket" maxlength="63" required></label>
+<label>Thư mục riêng <input name="prefix" value="camerahome" required maxlength="100"></label>
+<label>Access Key ID <input name="access_key" autocomplete="off" placeholder="Để trống để giữ khóa đã lưu"></label>
+<label>Secret Access Key <input name="secret_key" type="password" autocomplete="new-password" placeholder="Để trống để giữ khóa đã lưu"></label>
+<label>Số ngày giữ video trên R2 <input name="days" type="number" min="1" max="3650" value="30" required></label>
+<label class="check"><input name="enabled" type="checkbox" checked> Sao lưu lên R2</label>
+<button type="submit" class="accent">Kiểm tra và lưu R2</button></form>
+<p class="notice">Cần bucket đã tạo và khóa có quyền đọc, ghi, xóa đối tượng trong bucket. Video quá hạn sẽ bị xóa vĩnh viễn, tính từ lúc ghi hình. Chỉ dọn thư mục bản ghi của ứng dụng; chạy kiểm tra mỗi 5 phút khi máy chủ hoạt động. Khóa được lưu riêng trên máy chủ.</p>
+<p id="cloud-result" role="status"></p><p id="r2-status" role="status"></p></section>
 <section class="panel" id="site-panel" hidden><h2>Tên website</h2>
 <form id="site-form"><label>Tên hiển thị <input name="name" maxlength="60" required placeholder="CameraHome"></label><button type="submit" class="accent">Lưu tên</button></form><p id="site-result" role="status"></p></section>
 <section class="panel" id="purge-panel" hidden><h2>Xóa toàn bộ bản ghi</h2>
-<p class="notice">Xóa vĩnh viễn video của mọi camera trên máy chủ, kể cả hôm nay, video gốc, video đã nén và video xuất. Giữ bản sao Google Drive. Camera sẽ tự ghi tiếp sau khi dọn xong.</p>
+<p class="notice">Xóa vĩnh viễn video của mọi camera trên máy chủ, kể cả hôm nay, video gốc, video đã nén và video xuất. Giữ bản sao Google Drive và R2. Camera sẽ tự ghi tiếp sau khi dọn xong.</p>
 <button type="button" id="purge-open" class="danger">Xóa tất cả bản ghi</button>
 <form id="purge-form" hidden><label>Nhập XOA TAT CA để xác nhận <input name="confirm" required autocomplete="off" pattern="XOA TAT CA"></label><button type="submit" id="purge-submit" class="danger">Xóa vĩnh viễn tất cả video</button></form>
 <p id="purge-result" role="status"></p></section>
@@ -354,7 +372,7 @@ function timestamp(path) {
   const [minute,second] = name.split('.');
   return Date.parse(date + 'T' + hour + ':' + minute + ':' + second + 'Z');
 }
-function mediaUrl(path) {return '/media/' + path.split('/').map(encodeURIComponent).join('/');}
+function mediaUrl(path) {const source=el('recording-source').value;return (source==='local'?'/media/':'/api/cloud/media/'+source+'/')+path.split('/').map(encodeURIComponent).join('/');}
 function active() {return rows.find(row => row.path === activePath);}
 function playlist() {
   const camera = active()?.camera || filter.value;
@@ -479,10 +497,12 @@ async function clips() {
     const result=await Promise.all([...new Set(utcDays)].map(date => {
       const query=new URLSearchParams({day:date});
       if(filter.value) query.set('camera',filter.value);
-      return read('/api/clips?'+query);
+      const source=el('recording-source').value;
+      if(source!=='local')query.set('source',source);
+      return read((source==='local'?'/api/clips?':'/api/cloud/clips?')+query);
     }));
     if(current===requestId) showClips(result.flat());
-  } catch {if(current===requestId) {showClips([]);el('results').textContent='Không tải được danh sách bản ghi.';}}
+  } catch {if(current===requestId) {showClips([]);el('results').textContent='Không tải được bản ghi. Kiểm tra kết nối nguồn lưu trữ đã chọn.';}}
 }
 async function openCamera(id,replay) {
   autoLive=false;setView(replay?'recordings':'live');filter.value=id;el('recordings-title').textContent='Bản ghi · '+cameraName(id);resetReplay();
@@ -492,6 +512,9 @@ async function openCamera(id,replay) {
   const current=++requestId;
   el('results').textContent='Đang tìm bản ghi gần nhất…';
   try {
+    if(el('recording-source').value!=='local'){
+      await clips();if(replay&&rows.length)playClip(rows.at(-1).path);return;
+    }
     const result=await read('/api/clips/latest/'+encodeURIComponent(id));
     if(current!==requestId) return;
     if(result.clips.length) day.value=new Date(timestamp(result.clips[0])+vietnamOffset).toISOString().slice(0,10);
@@ -875,6 +898,7 @@ async function refresh() {
     return clips();
   }),session.admin?backup():Promise.resolve()]);
 }
+el('recording-source').onchange=()=>{localStorage.setItem('recording-source',el('recording-source').value);resetReplay();showClips([]);clips();};
 day.onchange = () => {resetReplay();clips();}; filter.onchange = () => {resetReplay();el('recordings-title').textContent = filter.value ? 'Bản ghi · ' + cameraName(filter.value) : 'Bản ghi'; clips();}; el('refresh').onclick = refresh;
 const accountForm=el('account-form');
 function renderAccountCameras(checked) {
@@ -927,6 +951,32 @@ accountForm.onsubmit=async event=>{
   } catch(error) {el('account-status').textContent=error.message;}
   finally {button.disabled=false;}
 };
+async function loadCloudSettings(){
+ try{
+  const state=await read('/api/storage'),policy=el('cloud-policy-form').elements,fields=el('r2-form').elements;
+  policy.drive_days.value=state.drive_days;policy.drive_enabled.checked=state.drive_enabled;
+  if(state.r2){for(const key of ['account_id','bucket','prefix','days'])fields[key].value=state.r2[key];fields.enabled.checked=state.r2.enabled;}
+  const [message,at]=(state.r2_status||'Chưa kết nối R2.').split('|');
+  el('r2-status').textContent=message+(at?' · '+new Date(Number(at)*1000).toLocaleString('vi-VN'):'');
+ }catch{el('cloud-result').textContent='Chưa tải được cấu hình đám mây.';}
+}
+el('cloud-policy-form').onsubmit=async event=>{
+ event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
+ try{const response=await fetch('/api/storage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({drive_days:Number(form.elements.drive_days.value),drive_enabled:form.elements.drive_enabled.checked})});
+ if(!response.ok)throw new Error(await response.text());el('cloud-result').textContent='Đã lưu chính sách Drive. Tự xóa chỉ áp dụng trong thư mục bản ghi.';}
+ catch(error){el('cloud-result').textContent=error.message;}finally{button.disabled=false;}
+};
+el('r2-form').onsubmit=async event=>{
+ event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
+ el('cloud-result').textContent='Đang kiểm tra kết nối R2…';
+ try{
+ const body=Object.fromEntries(new FormData(form));body.days=Number(body.days);body.enabled=form.elements.enabled.checked;
+ const response=await fetch('/api/storage/r2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ if(!response.ok)throw new Error(await response.text());
+ form.elements.access_key.value='';form.elements.secret_key.value='';
+ el('cloud-result').textContent='Đã lưu và kiểm tra kết nối R2. Sao lưu tự động mỗi 5 phút.';loadCloudSettings();
+ }catch(error){el('cloud-result').textContent=error.message;}finally{button.disabled=false;}
+};
 function applySiteName(name){name=name||'CameraHome';document.title=name;el('site-brand').textContent=name;}
 el('site-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
@@ -963,6 +1013,9 @@ async function initializePage(){
   el('cleanup').hidden=!session.admin;
   el('accounts-panel').hidden=!session.admin;
   el('site-panel').hidden=!session.admin;
+  el('cloud-panel').hidden=!session.admin;
+  const savedSource=localStorage.getItem('recording-source');if(['local','drive','r2'].includes(savedSource))el('recording-source').value=savedSource;
+  if(session.admin)loadCloudSettings();
   el('purge-panel').hidden=!session.admin;
   applySiteName(session.site_name);
   if(session.admin){el('site-form').elements.name.value=session.site_name||'CameraHome';pollPurge();}
