@@ -1,56 +1,155 @@
 # CameraHome
 
-Bảng quản lý nội bộ bằng Rust cho Frigate. CameraHome hiển thị ảnh mới nhất và trạng thái nhận hình, phát lại đoạn MP4 đã lưu, và báo kết quả lượt sao lưu Google Drive gần nhất. Frigate xử lý RTSP và ghi hình. CameraHome hỗ trợ thêm camera Tapo, xem trực tiếp và kết nối Drive trong giao diện web. Các thiết lập đầu ghi nâng cao tiếp tục dùng cấu hình Frigate.
+Giao diện quản lý camera Tapo bằng Rust/Axum, dùng Frigate để nhận RTSP, phát hiện sự kiện và ghi hình. Kho chứa mã ứng dụng, script xử lý video và các mẫu dịch vụ đang dùng trên máy chủ. Video, thông tin đăng nhập và trạng thái vận hành được lưu ngoài Git.
 
-## Cài trên Mini PC có aaPanel
+## Chức năng hiện tại
 
-1. Cài và cấu hình Frigate trước. Với mỗi camera Tapo, tạo Camera Account trong app Tapo, thử RTSP trên LAN, rồi thêm camera trong Frigate. Cấu hình luồng có vai trò record và detect. Với phiên bản Frigate có chính sách continuous/motion, đặt toàn cục như sau và bỏ thiết lập ghi liên tục riêng của từng camera.
+- Xem trực tiếp có tiếng, tự kết nối lại khi mất luồng hoặc quay lại tab.
+- Lọc ồn tự bật khi mở tiếng live; không hiển thị nút bật/tắt riêng.
+- Zoom, kéo khung hình, toàn màn hình; PTZ trái/phải/lên/xuống nếu camera hỗ trợ.
+- Chất lượng live tiết kiệm hoặc HD 1080p. Luồng HD có thể cần chuyển mã bằng CPU.
+- Thêm, sửa, gỡ camera, sửa kết nối; lưu MAC và tự dò IP mới trong cùng LAN.
+- Chọn ghi chuyển động, tiếng khóc hoặc kết hợp; chọn luồng chính HD/độ nét gốc hoặc luồng phụ.
+- Xuất đoạn tối đa khoảng 180 giây; sự kiện ngắn có thể tạo đoạn ngắn hơn.
+- Nén AV1/AAC giữ độ phân giải; có cơ chế sao chép luồng dự phòng khi không xuất AV1 phù hợp.
+- Xem lại theo ngày Việt Nam, timeline, tự chuyển đoạn; tua nhanh/chậm và tải clip.
+- Chọn nguồn xem lại trong Quản trị: máy chủ, Google Drive hoặc Cloudflare R2. Lựa chọn được ghi nhớ theo trình duyệt.
+- Danh sách bản ghi đám mây đã xác nhận được lưu riêng; tận dụng file còn trên máy chủ làm bộ đệm sau khi xác nhận bản sao đám mây.
+- Tài khoản, quyền theo camera và thao tác; đăng nhập/đăng xuất, phiên lưu bền, mật khẩu mới tối thiểu 6 ký tự.
+- Đổi tên website, tiêu đề tab và trang đăng nhập từ Quản trị.
+- Đặt ngày lưu riêng cho Drive/R2 và bản video đã sao lưu còn trên máy chủ.
+- Xóa bản ghi theo phạm vi; xóa toàn bộ video máy chủ qua tác vụ có xác nhận.
 
-   ```yaml
-   record:
-     enabled: true
-     continuous:
-       days: 0
-     motion:
-       days: 3
-   ```
+## Thành phần
 
-2. Chạy các lệnh sau với tài khoản có quyền Docker. Nếu Frigate dùng tên container khác, sửa tên trong lệnh và URL của Compose. Mạng phải được khai báo trong Compose của Frigate để kết nối còn tồn tại khi tạo lại container. Cổng 5000 của Frigate chỉ dùng nội bộ mạng Docker.
+| Đường dẫn | Vai trò |
+| --- | --- |
+| `src/main.rs` | Khởi tạo ứng dụng, API camera và bản ghi cục bộ |
+| `src/accounts.rs` | Đăng nhập, phiên bền, phân quyền, đổi tên website |
+| `src/manage.rs` | Camera, live/PTZ, OAuth và nhập mã Drive, yêu cầu dọn video |
+| `src/mac.rs` | Nhận diện MAC và cập nhật kết nối khi IP thay đổi |
+| `src/cloud.rs` | Drive/R2, sao lưu, hạn lưu, danh sách và phát video đám mây |
+| `web/` | Giao diện chính và trang đăng nhập |
+| `scripts/group-recordings.py` | Chọn bản ghi có sự kiện, ghép/nén clip |
+| `scripts/discover-lan.py` | Dò thiết bị RTSP và bảng MAC trên LAN của host |
+| `scripts/purge-recordings.py` | Dừng ghi, dọn video/chỉ mục/bộ đệm rồi bật ghi lại |
+| `deploy/` | Các file systemd service/timer/path |
+| `compose.yaml`, `Dockerfile` | Container CameraHome |
+
+`backup.sh` là cơ chế sao lưu cũ. Bản hiện tại dùng worker trong Rust; không bật đồng thời Cron cũ và worker mới.
+
+## Điều kiện triển khai
+
+- Linux, Docker Compose, Python 3 và iproute2 trên host.
+- Frigate đã chạy, tên container mặc định `frigate`, có go2rtc và API nội bộ ở cổng 5000.
+- Cấu hình Frigate tương thích với các mục `record.continuous`, `record.motion`, audio/review và API lưu cấu hình của ứng dụng.
+- Script nén hiện dùng FFmpeg trong container Frigate tại `/usr/lib/ffmpeg/7.0/bin/ffmpeg`, cần codec `libsvtav1`. Nếu image Frigate khác, kiểm tra và sửa đường dẫn trước.
+- Compose của Frigate được giữ ở `/opt/frigate/compose.yaml`. Tác vụ xóa toàn bộ dùng file này để tạo lại container và loại bỏ bộ đệm video cũ.
+- Camera Tapo có Camera Account/RTSP; nhận diện tiếng khóc cần luồng âm thanh. Kết quả phát hiện phụ thuộc cấu hình Frigate và môi trường.
+- Dò MAC cần host cùng mạng LAN trực tiếp với camera. Mặc định mạng `192.168.88.0/24`.
+
+AV1 giúp giảm dung lượng nhưng dùng nhiều CPU, đặc biệt với 1080p/2K và VPS không có GPU mã hóa. Tác vụ nén chạy trong container Frigate nên CPU của nó được tính vào container này.
+
+## Thư mục vận hành ngoài Git
+
+| Host | Container CameraHome | Nội dung |
+| --- | --- | --- |
+| `/opt/frigate/config` | `/frigate-config` (chỉ đọc) | Cấu hình Frigate |
+| `/opt/frigate/storage/camerahome-clips` | `/recordings` | Video đã xuất/nén |
+| `/opt/frigate/backup-status` | `/backup-status` (chỉ đọc) | Trạng thái cơ chế cũ |
+| `/opt/camerahome-data` | `/app-data` | Phiên, tên website, cấu hình kho, token, chỉ mục và trạng thái |
+| `/opt/camerahome-auth` | `/nginx-auth` | Hash tài khoản, phân quyền và bí mật xác thực proxy |
+
+Thư mục dữ liệu và xác thực cần được bảo vệ bằng quyền truy cập thích hợp, thường 0700; file bí mật 0600. Sao lưu riêng các thư mục này nếu cần khôi phục máy chủ. Không đưa token Drive, khóa R2, mật khẩu/hash tài khoản, cấu hình RTSP thật hoặc video lên kho công khai.
+
+## Cài ứng dụng trên aaPanel
+
+Đây là hướng dẫn triển khai mã nguồn với Frigate đã có sẵn, không phải bản sao toàn bộ VPS.
+
+1. Đặt checkout tại `/opt/camerahome`; tạo các thư mục dữ liệu theo bảng trên.
+2. Sửa `compose.yaml` cho đúng `PUBLIC_ORIGIN`, `CAMERA_SUBNET` và đường dẫn host.
+3. Tạo mạng Docker `camera_backend` nếu chưa có; khai báo mạng này trong cả Compose Frigate và CameraHome. Dịch vụ Frigate cần có alias `frigate`. Giữ cổng 5000 của Frigate ở mạng nội bộ.
+4. Chuẩn bị xác thực trước khi mở website:
+   - `/opt/camerahome-auth/proxy-token`: chuỗi ngẫu nhiên bí mật, ít nhất 32 ký tự.
+   - `/opt/camerahome-auth/users`: có dòng `admin:<hash SHA-512 crypt>`; tạo hash bằng `openssl passwd -6`.
+   - Không ghi đè các file xác thực đã có khi cập nhật.
+5. Build và chạy:
 
    ```sh
-   docker network create camera_backend
-   docker network connect --alias frigate camera_backend frigate
+   cd /opt/camerahome
    docker compose up -d --build
-   curl -f http://127.0.0.1:8180/api/cameras
    ```
 
-3. Với cấu hình Frigate quản lý qua Compose, thêm mạng camera_backend vào danh sách mạng của dịch vụ frigate, giữ các mạng đang dùng và khai báo camera_backend là external: true ở mục networks cấp cao nhất. Nếu thư mục Frigate ngoài host khác mẫu, sửa đường dẫn trong compose.yaml và backup.sh.
-4. Trong aaPanel, tạo website nội bộ, bật HTTPS và bảo vệ toàn bộ website bằng xác thực Nginx trước khi tạo reverse proxy đến http://127.0.0.1:8180. Kiểm tra truy cập chưa đăng nhập vào /, /api/cameras và /media/ đều bị chặn. CameraHome dựa vào lớp xác thực này. Trường hợp truy cập từ xa, ưu tiên VPN vào LAN.
-5. Cài rclone trên host. Dùng rclone config để tạo kết nối Google Drive tên gdrive bằng cùng tài khoản Linux chạy Cron. Kiểm tra bằng rclone lsd gdrive:. Trong aaPanel Cron tạo Shell Script chạy mỗi 5 phút và gọi đường dẫn tuyệt đối tới backup.sh. Tác vụ chỉ sao chép các đoạn Frigate đã lưu, giữ bản đã tải trên Drive khi Frigate dọn cục bộ. Trạng thái là kết quả của cả lượt chạy, không phải xác nhận riêng từng clip.
-6. Thử từng camera bằng cách đi qua vùng quan sát. Xác nhận Frigate tạo đoạn MP4, CameraHome phát lại được đoạn đó, và Drive nhận file sau lượt Cron. Ngày lọc trên web dùng UTC theo cấu trúc thư mục của Frigate.
+6. Trong aaPanel, bật HTTPS và reverse proxy tới `http://127.0.0.1:8180`. Cho phép WebSocket và thời gian chờ đủ dài.
+7. Nginx phải ghi đè các header sau cho mọi route được proxy, kể cả live và OAuth:
+   - `X-CameraHome-Proxy`: giá trị bí mật trùng file proxy-token.
+   - `X-CameraHome-User`: chuỗi rỗng; không tin header do trình duyệt gửi.
+   - `X-CameraHome-Client`: địa chỉ client cho giới hạn lần đăng nhập.
+8. Tắt access log riêng cho `/drive/callback` để không lưu mã OAuth. Không công bố cổng 8180 ra Internet.
+9. Đăng nhập bằng biểu mẫu CameraHome tại `/login`. Bản hiện tại xác thực tài khoản và phiên trong ứng dụng, không cần HTTP Basic Auth của Nginx.
 
-Không đưa cấu hình RTSP thật, token rclone, dữ liệu video hoặc mật khẩu lên GitHub.
+Cấu hình Nginx thực tế chứa bí mật proxy và chứng chỉ được giữ trên máy chủ; kho chỉ mô tả yêu cầu tích hợp.
 
-## Quản lý trên CameraHome
+## Cài các dịch vụ nền
 
-Bản mới có biểu mẫu thêm camera Tapo bằng IP và Camera Account, xem trực tiếp qua go2rtc/MSE, phát lại bản ghi và OAuth Google Drive. Frigate vẫn ghi clip khi có chuyển động. Cấu hình có `PUBLIC_ORIGIN` và `CAMERA_SUBNET` trong Compose. Nginx phải chuyển tiếp WebSocket cho `/api/live/` và yêu cầu đăng nhập cho mọi đường dẫn. Tắt access log cho `/drive/callback` để mã OAuth không xuất hiện trong log.
+Kiểm tra đường dẫn và mạng trong mẫu trước khi cài. Các mẫu dùng checkout ở `/opt/camerahome`.
 
-Tạo Google OAuth client loại Web application, bật Drive API và thêm URL chuyển hướng `https://camera.nghi.org/drive/callback`. Cấp quyền trong giao diện CameraHome. Ứng dụng chỉ xin quyền Drive theo tệp và tạo thư mục đích bằng tài khoản được cấp quyền. Dữ liệu xác thực sao lưu ở `/opt/camerahome-data`, cần quyền thư mục 0700. Bộ hẹn giờ trong container kiểm tra clip mỗi 5 phút. Nếu đã dùng Cron cũ, tắt nó để dùng một tác vụ sao lưu.
+```sh
+sudo install -m 644 deploy/camerahome-*.service /etc/systemd/system/
+sudo install -m 644 deploy/camerahome-*.timer /etc/systemd/system/
+sudo install -m 644 deploy/camerahome-*.path /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now camerahome-clips.timer camerahome-lan.timer camerahome-purge.path
+```
 
-### Chế độ ghi hình
+- `camerahome-clips.timer`: chạy lại sau khi lượt xuất clip trước kết thúc, khoảng 15 giây.
+- `camerahome-lan.timer`: dò LAN khoảng mỗi phút. Sửa `CAMERA_SUBNET` trong service nếu đổi mạng.
+- `camerahome-purge.path`: theo dõi yêu cầu xóa do admin gửi từ website. Không chạy script purge thủ công để thay bước xác nhận.
 
-Mỗi camera Tapo có thể giữ clip khi có chuyển động, khi nhận diện tiếng khóc, hoặc dùng cả hai. Ở chế độ kết hợp, Frigate cũng tính âm lượng vượt ngưỡng là chuyển động nên có thể giữ đoạn có âm thanh lớn khác. Camera cần luồng có âm thanh để nhận diện tiếng khóc. CameraHome đặt thời gian lưu trên máy chủ là ba ngày cho các loại bản ghi đã bật.
+## Google Drive và Cloudflare R2
 
-Bản ghi nhẹ sử dụng RTSP stream2 do camera nén sẵn, còn phát trực tiếp sử dụng stream1. Chất lượng và bitrate phụ thuộc model cũng như cấu hình camera. Nếu stream2 không hoạt động hoặc cần ảnh rõ hơn, bỏ chọn bản ghi nhẹ.
+Sao lưu tự chạy trong ứng dụng khoảng mỗi 5 phút. File cần hoàn tất ít nhất 60 giây; ứng dụng chọn file trước khi gọi rclone. Lượt dài hoặc bị giới hạn API có thể kết thúc muộn hơn. Có giới hạn tốc độ gọi Drive, thử lại và trạng thái tiến trình/lỗi trong Quản trị.
 
-### Xem lại theo thời gian và dọn clip
+### Drive
 
-Thanh thời gian dùng giờ Việt Nam. Chọn một camera và ngày, kéo đến một mốc hoặc mở một đoạn trong danh sách. Khi phát hết đoạn, trình phát chuyển sang đoạn kế tiếp của cùng camera. Các mức tốc độ ngoài khả năng trình duyệt dùng tua theo khung hình.
+Quản trị hỗ trợ OAuth riêng và nhập mã rclone.
 
-Mục Dọn bản ghi cũ đếm các tệp trước 00:00 ngày đã chọn rồi yêu cầu nhập XOA. Chức năng xóa tệp MP4 trên ổ máy chủ, giữ các bản sao trên Drive. CameraHome đọc danh sách từ ổ đĩa. Chỉ mục của Frigate có thể còn hiển thị các đoạn đã xóa cho đến khi Frigate dọn chỉ mục.
+- OAuth riêng: bật Drive API, tạo Web application client và thêm `PUBLIC_ORIGIN/drive/callback` làm redirect URI, rồi kết nối trên website.
+- Nhập mã: chạy `rclone authorize "drive"` trên máy có trình duyệt, dán JSON vào ô bảo mật trên website. Không gửi token vào chat.
+- Kết nối nhanh mặc định dùng client OAuth của rclone. Theo [tài liệu rclone](https://rclone.org/drive/#making-your-own-client-id), client dùng chung đang được ngừng trong năm 2026; dùng OAuth riêng cho triển khai lâu dài.
+- Bản sao nằm dưới `<thư mục đã chọn>/recordings/YYYY-MM-DD/HH/<camera>/MM.SS.mp4`.
 
-### Tài khoản và chất lượng trực tiếp
+### R2
 
-CameraHome nhận tên người dùng từ Nginx sau HTTP Basic authentication. Đặt một chuỗi ngẫu nhiên bí mật trong `/opt/camerahome-auth/proxy-token`, gắn cả thư mục vào container tại `/nginx-auth` và buộc Nginx ghi đè các header `X-CameraHome-User` (giá trị `$remote_user`) và `X-CameraHome-Proxy` (giá trị bí mật), kể cả ở route live và OAuth. Không công bố cổng container. File `/opt/camerahome-auth/users` cần có dòng `admin` để mở Quản trị. Giữ file token và cấu hình riêng trên máy chủ.
+Tạo bucket và khóa có quyền đọc/ghi/xóa trong bucket, rồi nhập Account ID, bucket, prefix, Access Key ID và Secret Access Key trong Quản trị. Ứng dụng dùng endpoint R2 S3 tiêu chuẩn. Không cần bucket công khai.
 
-Admin cấp danh sách camera và quyền xem live, bản ghi, điều khiển xoay hoặc chỉnh cấu hình riêng. Tài khoản được khóa trong mục Quản trị. Luồng Tiết kiệm chọn stream2 còn HD 1080p sử dụng go2rtc FFmpeg trên máy chủ. Lọc ồn chỉ áp dụng trong phiên xem trực tiếp trên trình duyệt.
+### Xem lại đám mây
+
+Chọn nguồn trong Quản trị; chọn ngày/camera và xem tại mục Xem lại. Thời gian trên giao diện là giờ Việt Nam, đường dẫn file dùng UTC.
+
+Danh sách đám mây đã xác nhận được lưu ở app-data. Nếu bản nén tương ứng còn trên máy chủ và dung lượng khớp bản sao đã xác nhận, ứng dụng dùng nó làm bộ đệm phát. Khi không có bộ đệm, ứng dụng đọc từ kho qua rclone. Phát theo byte range hỗ trợ tua và tải xuống; quyền theo camera vẫn được kiểm tra. Khi Drive giới hạn API, danh sách có thể cập nhật chậm và giao diện giữ kết quả đã tải được.
+
+## Hạn lưu và xóa
+
+- Drive: 0 ngày = không tự xóa. R2 có thời gian lưu từ 1 đến 3650 ngày khi sao lưu được bật.
+- Bản video đã sao lưu trên máy chủ: 0 ngày = không tự xóa. Chỉ dọn file quá hạn khi các kho đã kết nối và đang bật đều xác nhận có bản sao đủ dung lượng.
+- Bật cả Drive và R2 thì cần đủ hai bản sao trước khi tự dọn bản trên máy chủ.
+- Hạn lưu tính theo thời điểm ghi trong tên file. Chỉ dọn phạm vi bản ghi của ứng dụng.
+- Video gốc của Frigate có chính sách giữ riêng theo từng camera; không đồng nhất với hạn lưu video đã nén.
+- Nút xóa toàn bộ yêu cầu nhập `XOA TAT CA`, tạm dừng ghi, dọn video gốc/nén/xuất và chỉ mục, tạo lại Frigate để bỏ bộ đệm, rồi bật ghi tiếp. Nó giữ bản sao Drive/R2; video mới có thể xuất hiện sau khi ghi được bật lại.
+
+## Cập nhật và kiểm tra
+
+```sh
+git fetch origin main
+git checkout --detach origin/main
+docker compose up -d --build
+```
+
+Kiểm tra diff cục bộ trước khi checkout; không dùng lệnh reset để bỏ cấu hình riêng. Sau cập nhật, kiểm tra đăng nhập, live có tiếng, ghi sự kiện, xem/tua từng nguồn đã kết nối và trạng thái sao lưu. Các lần cập nhật chỉ tài liệu hoặc mẫu dịch vụ không cần rebuild ứng dụng nếu chưa thay mã.
+
+```sh
+cargo test --release
+python3 -m py_compile scripts/*.py
+systemctl status camerahome-clips.timer camerahome-lan.timer camerahome-purge.path
+```
