@@ -160,14 +160,17 @@ fn epoch() -> u64 {std::time::SystemTime::now().duration_since(std::time::UNIX_E
 async fn sessions() -> Result<tokio::sync::MappedMutexGuard<'static,Sessions>,Problem> {
     let mut guard=SESSIONS.lock().await;
     if guard.is_none() {
-        let loaded=match fs::read(SESSION_FILE).await {
-            Ok(raw)=>serde_json::from_slice::<Sessions>(&raw).map_err(|_|internal())?,
-            Err(e) if e.kind()==std::io::ErrorKind::NotFound=>BTreeMap::new(),
-            Err(_)=>return Err(internal()),
-        };
+        let loaded=read_sessions(SESSION_FILE).await?;
         *guard=Some(loaded);
     }
     Ok(tokio::sync::MutexGuard::map(guard,|value|value.as_mut().unwrap()))
+}
+async fn read_sessions(path:&str)->Result<Sessions,Problem> {
+    match fs::read(path).await {
+        Ok(raw)=>serde_json::from_slice::<Sessions>(&raw).map_err(|_|internal()),
+        Err(e) if e.kind()==std::io::ErrorKind::NotFound=>Ok(BTreeMap::new()),
+        Err(_)=>Err(internal())
+    }
 }
 async fn persist_sessions(items:&Sessions)->Result<(),Problem> {
     atomic_write(SESSION_FILE,&serde_json::to_vec(items).map_err(|_|internal())?,0o600,None).await
@@ -354,4 +357,30 @@ async fn save(State(app): State<App>, headers: axum::http::HeaderMap, Json(mut d
     }
     if invalidate {revoke(&username).await?;}
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+    #[tokio::test]
+    async fn session_file_survives_reload_and_revocation() {
+        let path=std::env::temp_dir().join(format!("camerahome-session-test-{}",std::process::id()));
+        let path=path.to_str().unwrap();
+        let mut original=Sessions::new();
+        original.insert("test-id".into(),("test-user".into(),epoch()+SESSION_TTL));
+        atomic_write(path,&serde_json::to_vec(&original).unwrap(),0o600,None).await.unwrap();
+        let mut reloaded=read_sessions(path).await.unwrap();
+        assert_eq!(original,reloaded);
+        assert_eq!(fs::metadata(path).await.unwrap().permissions().mode()&0o777,0o600);
+        reloaded.clear();
+        atomic_write(path,&serde_json::to_vec(&reloaded).unwrap(),0o600,None).await.unwrap();
+        assert!(read_sessions(path).await.unwrap().is_empty());
+        fs::write(path,b"invalid").await.unwrap();
+        assert!(read_sessions(path).await.is_err());
+        fs::remove_file(path).await.unwrap();
+    }
+    #[test] fn persistent_cookie_keeps_security_attributes() {
+        let value=session_header("test");
+        for marker in ["Secure","HttpOnly","SameSite=Lax","Path=/","Max-Age=34560000"] {assert!(value.contains(marker));}
+    }
 }
