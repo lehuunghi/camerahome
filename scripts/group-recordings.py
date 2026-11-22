@@ -18,7 +18,6 @@ ID = re.compile(r"[A-Za-z0-9_-]{1,100}")
 FILENAME = re.compile(r"\d{2}\.\d{2}\.mp4")
 WAIT_SECONDS = 35
 CLIP_SECONDS = 180
-RETENTION_SECONDS = 3 * 86400
 
 
 def recording_time(file, root):
@@ -92,11 +91,30 @@ def export(batch):
         temporary.unlink(missing_ok=True)
 
 
+def eligible_recordings():
+    code = r"""import json,sqlite3,yaml
+with open('/config/config.yml') as f: cfg=yaml.safe_load(f)
+c=sqlite3.connect('file:/config/frigate.db?mode=ro',uri=True)
+allowed=[]
+for camera,settings in cfg['cameras'].items():
+ motion=settings.get('record',{}).get('motion',{}).get('days',0)>0
+ cry=settings.get('audio',{}).get('enabled',False)
+ for path,start,end,movement in c.execute('select path,start_time,end_time,motion from recordings where camera=?',(camera,)):
+  if (motion and (movement or 0)>0) or (cry and c.execute("select 1 from event where camera=? and label='crying' and start_time<? and coalesce(end_time,?)>? limit 1",(camera,end,end,start)).fetchone()): allowed.append(path)
+print(json.dumps(allowed))"""
+    result = subprocess.run(['docker','exec',FRIGATE,'python3','-c',code],
+                            capture_output=True,text=True,check=True,timeout=25)
+    return {p.removeprefix('/media/frigate/recordings/') for p in json.loads(result.stdout)}
+
+
 def main():
     now = time.time()
     progress = json.loads(STATE.read_text()) if STATE.exists() else {}
     groups = collections.defaultdict(list)
+    eligible = eligible_recordings()
     for at, camera, file in files(RAW):
+        if file.relative_to(RAW).as_posix() not in eligible:
+            continue
         if at > progress.get(camera, 0) and now - file.stat().st_mtime > 2:
             groups[camera].append((at, file))
     for camera, items in groups.items():
@@ -107,9 +125,7 @@ def main():
                 write_progress(progress)
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             print(f"{camera}: retry next run ({type(error).__name__})", flush=True)
-    for at, _, file in files(OUTPUT):
-        if now - at > RETENTION_SECONDS:
-            file.unlink(missing_ok=True)
+    # Finalized clips are retained by CameraHome only after cloud-copy verification.
 
 
 if __name__ == "__main__":
