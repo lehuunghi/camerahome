@@ -1,0 +1,13 @@
+[Unit]
+Description=CameraHome local LAN identity discovery
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/camerahome/scripts/discover-lan.py
+Environment=CAMERA_SUBNET=192.168.88
+TimeoutStartSec=45
+Nice=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/camerahome-data
