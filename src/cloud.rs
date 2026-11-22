@@ -231,6 +231,9 @@ async fn sync(app:&App,source:&str,days:u32)->Result<(),Problem>{
  copied?;expired
 }
 fn old_enough(at:i64,now:i64,days:u32)->bool {days>0&&at<now-i64::from(days)*86400}
+fn copies_confirmed(path:&str,size:u64,copies:&[BTreeMap<String,u64>])->bool{
+ size>0&&!copies.is_empty()&&copies.iter().all(|copy|copy.get(path)==Some(&size))
+}
 async fn cleanup_local(app:&App,p:&Policy)->Result<usize,Problem>{
  if p.local_days==0{return Ok(0);}
  let mut sources=Vec::new();
@@ -261,7 +264,7 @@ async fn cleanup_local(app:&App,p:&Policy)->Result<usize,Problem>{
   let file=app.recordings.join(&path);
   let Ok(meta)=fs::symlink_metadata(&file).await else{continue;};
   if !meta.file_type().is_file()||meta.len()==0{continue;}
-  if verified.iter().all(|copies|copies.get(&path)==Some(&meta.len())){
+  if copies_confirmed(&path,meta.len(),&verified){
    if fs::remove_file(&file).await.is_ok(){removed+=1;}
   }
  }
@@ -293,6 +296,15 @@ pub async fn backup_worker(app:App){
 }
 #[cfg(test)]mod tests {
  use super::*;
+ #[test]fn requires_matching_copy_in_every_active_source(){
+ let path="2026-11-22/07/bep/01.02.mp4";
+ let good=BTreeMap::from([(path.to_owned(),100)]);
+ let short=BTreeMap::from([(path.to_owned(),99)]);
+ assert!(!copies_confirmed(path,100,&[]));
+ assert!(!copies_confirmed(path,100,&[good.clone(),BTreeMap::new()]));
+ assert!(!copies_confirmed(path,100,&[good.clone(),short]));
+ assert!(copies_confirmed(path,100,&[good.clone(),good]));
+}
  #[test]fn local_expiry_never_deletes_when_disabled(){assert!(!old_enough(0,1000000,0));assert!(!old_enough(100000,100001,1));assert!(old_enough(0,100000,1));}
  #[test]fn ranges(){assert_eq!(byte_range(Some("bytes=10-19"),100),Ok((10,19,true)));assert_eq!(byte_range(Some("bytes=-10"),100),Ok((90,99,true)));assert_eq!(byte_range(Some("bytes=90-"),100),Ok((90,99,true)));assert!(byte_range(Some("bytes=100-"),100).is_err());assert!(byte_range(Some("bytes=0-1,4-5"),100).is_err());}
  #[test]fn paths(){assert_eq!(clip_camera("2026-11-22/07/bep/01.02.mp4"),Some("bep"));for bad in ["2026-11-22/07/../01.02.mp4","2026-11-22/99/bep/01.02.mp4","2026-11-22/07/bep/../../key","2026-02-30/07/bep/01.02.mp4"]{assert!(clip_camera(bad).is_none());}}
