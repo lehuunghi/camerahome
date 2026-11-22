@@ -117,7 +117,10 @@ fn permits(p: &Principal, method: &Method, path: &str) -> bool {
     if p.admin { return true; }
     let read = method == Method::GET || method == Method::HEAD;
     if read && matches!(path, "/" | "/api/session" | "/api/cameras") { return true; }
-    if path == "/api/clips" { return read && p.access.recordings; }
+    if matches!(path,"/api/clips"|"/api/cloud/clips") { return read && p.access.recordings; }
+    if let Some((source,clip))=path.strip_prefix("/api/cloud/media/").and_then(|v|v.split_once('/')) {
+        return read && p.access.recordings && matches!(source,"drive"|"r2") && crate::cloud::clip_camera(clip).is_some_and(|id|p.has_camera(id));
+    }
     for (prefix, allowed) in [
         ("/api/live/", p.access.live && read),
         ("/api/snapshot/", p.access.live && read),
