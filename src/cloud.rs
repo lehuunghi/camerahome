@@ -20,10 +20,10 @@ async fn private(path:&str,bytes:&[u8])->Result<(),Problem>{
 struct R2 {account_id:String,bucket:String,prefix:String,access_key:String,secret_key:String,days:u32,enabled:bool}
 #[derive(Clone,Serialize,Deserialize)]
 #[serde(default)]
-struct Policy {drive_days:u32,drive_enabled:bool,local_days:u32}
-impl Default for Policy{fn default()->Self{Self{drive_days:0,drive_enabled:true,local_days:0}}}
+pub(crate) struct Policy {drive_days:u32,drive_enabled:bool,local_days:u32,backup_enabled:bool,local_enabled:bool,r2_enabled:Option<bool>,local_off_since:Option<i64>}
+impl Default for Policy{fn default()->Self{Self{drive_days:0,drive_enabled:true,local_days:0,backup_enabled:true,local_enabled:true,r2_enabled:None,local_off_since:None}}}
 async fn r2()->Result<R2,Problem>{serde_json::from_slice(&fs::read(R2_FILE).await.map_err(|_|(StatusCode::CONFLICT,"Chưa kết nối Cloudflare R2."))?).map_err(|_|error())}
-async fn policy()->Policy{fs::read(POLICY).await.ok().and_then(|v|serde_json::from_slice(&v).ok()).unwrap_or_default()}
+pub(crate) async fn policy()->Policy{fs::read(POLICY).await.ok().and_then(|v|serde_json::from_slice(&v).ok()).unwrap_or_default()}
 struct Remote {config:String,target:String,env:Vec<(String,String)>}
 fn r2_remote(c:&R2)->Remote{
  Remote{config:"/dev/null".into(),target:format!("r2:{}/{}/recordings",c.bucket,c.prefix),env:vec![
@@ -70,6 +70,7 @@ async fn output(remote:&Remote,args:&[&str],seconds:u64)->Result<Vec<u8>,Problem
 pub fn routes()->Router<App>{
  Router::new().route("/api/storage",get(settings).post(save_policy))
  .route("/api/storage/r2",post(save_r2))
+ .route("/api/storage/backup",post(save_backup))
  .route("/api/cloud/clips",get(clips))
  .route("/api/cloud/media/{source}/{*path}",get(media))
 }
@@ -77,14 +78,44 @@ async fn settings()->Json<Value>{
  let policy=policy().await;
  let r=r2().await.ok();
  let last=fs::read_to_string("/app-data/r2-status").await.unwrap_or_default();
- Json(json!({"drive_days":policy.drive_days,"drive_enabled":policy.drive_enabled,"local_days":policy.local_days,"r2":r.map(|c|json!({"account_id":c.account_id,"bucket":c.bucket,"prefix":c.prefix,"days":c.days,"enabled":c.enabled,"configured":true})),"r2_status":last,"local_status":fs::read_to_string("/app-data/local-retention-status").await.unwrap_or_default()}))
+ Json(json!({"backup_enabled":policy.backup_enabled,"local_enabled":policy.local_enabled,"r2_enabled":r.as_ref().is_some_and(|c|policy.r2_enabled.unwrap_or(c.enabled)),"drive_configured":remote("drive").await.is_ok(),"drive_days":policy.drive_days,"drive_enabled":policy.drive_enabled,"local_days":policy.local_days,"r2":r.map(|c|json!({"account_id":c.account_id,"bucket":c.bucket,"prefix":c.prefix,"days":c.days,"enabled":c.enabled,"configured":true})),"r2_status":last,"local_status":fs::read_to_string("/app-data/local-retention-status").await.unwrap_or_default()}))
 }
-async fn save_policy(State(app):State<App>,headers:HeaderMap,Json(policy):Json<Policy>)->Result<StatusCode,Problem>{
+#[derive(Deserialize)]
+struct RetentionEdit {drive_days:u32,local_days:u32}
+async fn save_policy(State(app):State<App>,headers:HeaderMap,Json(edit):Json<RetentionEdit>)->Result<StatusCode,Problem>{
  crate::manage::require_origin(&headers)?;
- if policy.drive_days>3650 || policy.local_days>3650 {return Err(bad());}
- let _lock=app.drive_lock.lock().await;
- private(POLICY,&serde_json::to_vec(&policy).map_err(|_|bad())?).await?;
+ if edit.drive_days>3650||edit.local_days>3650{return Err(bad());}
+ let _lock=app.management.lock().await;
+ let mut p=policy().await;p.drive_days=edit.drive_days;p.local_days=edit.local_days;
+ private(POLICY,&serde_json::to_vec(&p).map_err(|_|bad())?).await?;
  Ok(StatusCode::NO_CONTENT)
+}
+#[derive(Deserialize)]
+struct BackupEdit {backup_enabled:bool,local_enabled:bool,drive_enabled:bool,r2_enabled:bool}
+async fn save_backup(State(app):State<App>,headers:HeaderMap,Json(edit):Json<BackupEdit>)->Result<StatusCode,Problem>{
+ crate::manage::require_origin(&headers)?;
+ if edit.drive_enabled&&remote("drive").await.is_err(){return Err((StatusCode::CONFLICT,"Kết nối Google Drive trước khi bật sao lưu."));}
+ if edit.r2_enabled&&r2().await.is_err(){return Err((StatusCode::CONFLICT,"Kết nối R2 trước khi bật sao lưu."));}
+ let _lock=app.management.lock().await;
+ let mut p=policy().await;
+ if p.local_enabled&&!edit.local_enabled {p.local_off_since=Some(chrono::Utc::now().timestamp_millis());}
+ if edit.local_enabled{p.local_off_since=None;}
+ p.backup_enabled=edit.backup_enabled;p.local_enabled=edit.local_enabled;
+ p.drive_enabled=edit.drive_enabled;p.r2_enabled=Some(edit.r2_enabled);
+ private(POLICY,&serde_json::to_vec(&p).map_err(|_|bad())?).await?;
+ Ok(StatusCode::NO_CONTENT)
+}
+async fn source_enabled(source:&str)->bool{
+ let p=policy().await;
+ p.backup_enabled&&if source=="drive"{p.drive_enabled}else{r2().await.is_ok_and(|c|p.r2_enabled.unwrap_or(c.enabled))}
+}
+// Dropping output's future terminates rclone; playback uses the ungated output helper.
+async fn backup_output(r:&Remote,args:&[&str],seconds:u64,source:&str)->Result<Vec<u8>,Problem>{
+ let work=output(r,args,seconds);tokio::pin!(work);
+ loop{tokio::select!{
+  result=&mut work=>return result,
+  _=time::sleep(Duration::from_secs(2))=>if !source_enabled(source).await{return Err((StatusCode::CONFLICT,"Đã tắt sao lưu nguồn này."));}
+ }}
 }
 fn valid_r2(c:&R2)->bool{
  c.account_id.len()==32 && c.account_id.bytes().all(|b|b.is_ascii_hexdigit())
@@ -333,7 +364,7 @@ async fn sync(app:&App,source:&str,days:u32)->Result<(),Problem>{
   private(&file,files.join("\n").as_bytes()).await?;
   let status_file=format!("/app-data/{source}-status");
   let _=private(&status_file,format!("Đang kiểm tra và sao lưu {} video; tự chờ nếu kho lưu trữ giới hạn API.|{}",files.len(),chrono::Utc::now().timestamp()).as_bytes()).await;
-  let result=output(&r,&["copy",app.recordings.to_str().ok_or_else(error)?,&r.target,"--files-from",&file,"--transfers","1","--checkers","1","--retries","3","--retries-sleep","30s"],600).await;
+  let result=backup_output(&r,&["copy",app.recordings.to_str().ok_or_else(error)?,&r.target,"--files-from",&file,"--transfers","1","--checkers","1","--retries","3","--retries-sleep","30s"],600,source).await;
   let _=fs::remove_file(file).await;
   if result.is_ok(){
    let entries=files.iter().filter_map(|path|app.recordings.join(path).metadata().ok().map(|m|(path.clone(),m.len()))).collect();
@@ -341,6 +372,7 @@ async fn sync(app:&App,source:&str,days:u32)->Result<(),Problem>{
   }
   result.map(|_|())
  }else{Ok(())};
+ if !source_enabled(source).await{return copied;}
  let expired=expire(&r,days,source).await;
  if expired.is_ok(){prune_catalog(&r,days).await?;}
  copied?;expired
@@ -349,14 +381,17 @@ fn old_enough(at:i64,now:i64,days:u32)->bool {days>0&&at<now-i64::from(days)*864
 fn copies_confirmed(path:&str,size:u64,copies:&[BTreeMap<String,u64>])->bool{
  size>0&&!copies.is_empty()&&copies.iter().all(|copy|copy.get(path)==Some(&size))
 }
+pub(crate) fn is_staging(p:&Policy,path:&std::path::Path)->bool{
+ !p.local_enabled&&p.local_off_since.is_some_and(|since|path.metadata().ok().and_then(|m|m.modified().ok()).and_then(|at|at.duration_since(std::time::UNIX_EPOCH).ok()).is_some_and(|at|at.as_millis()>=since as u128))
+}
 async fn cleanup_local(app:&App,p:&Policy)->Result<usize,Problem>{
- if p.local_days==0{return Ok(0);}
+ if !p.backup_enabled||(p.local_enabled&&p.local_days==0){return Ok(0);}
  let mut sources=Vec::new();
  if p.drive_enabled&&remote("drive").await.is_ok(){sources.push(remote("drive").await?);}
- if let Ok(c)=r2().await {if c.enabled{sources.push(r2_remote(&c));}}
+ if let Ok(c)=r2().await {if p.r2_enabled.unwrap_or(c.enabled){sources.push(r2_remote(&c));}}
  if sources.is_empty(){return Ok(0);}
  let now=chrono::Utc::now().timestamp();
- let candidates:Vec<String>=local_files(app,0).await?.into_iter().filter(|path|clip_time(path).is_some_and(|at|old_enough(at,now,p.local_days))).collect();
+ let candidates:Vec<String>=local_files(app,0).await?.into_iter().filter(|path|clip_time(path).is_some_and(|at|old_enough(at,now,p.local_days))||is_staging(p,&app.recordings.join(path))).collect();
  let days:std::collections::BTreeSet<_>=candidates.iter().filter_map(|p|p.split('/').next()).collect();
  let mut verified:Vec<BTreeMap<String,u64>>=Vec::new();
  for source in &sources {
@@ -379,6 +414,7 @@ async fn cleanup_local(app:&App,p:&Policy)->Result<usize,Problem>{
   let file=app.recordings.join(&path);
   let Ok(meta)=fs::symlink_metadata(&file).await else{continue;};
   if !meta.file_type().is_file()||meta.len()==0{continue;}
+  if !policy().await.backup_enabled{return Ok(removed);}
   if copies_confirmed(&path,meta.len(),&verified){
    if fs::remove_file(&file).await.is_ok(){removed+=1;}
   }
@@ -392,15 +428,16 @@ pub async fn backup_worker(app:App){
  let Ok(_lock)=app.drive_lock.try_lock() else{continue;};
  if purge_busy().await{continue;}
  let p=policy().await;
+ if !p.backup_enabled{continue;}
  for source in ["drive","r2"]{
-  let (enabled,days)=if source=="drive"{(p.drive_enabled,p.drive_days)}else{match r2().await {Ok(c)=>(c.enabled,c.days),Err(_)=>continue}};
-  if !enabled||remote(source).await.is_err(){continue;}
+  let (enabled,days)=if source=="drive"{(p.drive_enabled,p.drive_days)}else{match r2().await {Ok(c)=>(p.r2_enabled.unwrap_or(c.enabled),c.days),Err(_)=>continue}};
+  if !enabled||!source_enabled(source).await||remote(source).await.is_err(){continue;}
   let outcome=sync(&app,source,days).await;
   let message=match outcome {Ok(())=>"Đã sao lưu và kiểm tra hạn lưu trữ".to_owned(),Err((_,reason))=>format!("{reason} Sẽ thử lại ở lượt sau.")};
   let file=format!("/app-data/{source}-status");
   let _=private(&file,format!("{message}|{}",chrono::Utc::now().timestamp()).as_bytes()).await;
  }
- if p.local_days>0 {
+ if p.local_days>0||!p.local_enabled {
   let message=match cleanup_local(&app,&p).await{
    Ok(removed)=>format!("Đã dọn {removed} video quá hạn có bản sao xác nhận trên các nguồn đám mây đang bật. Video chưa xác nhận sao lưu được giữ lại."),
    Err(_)=>"Chưa xác nhận được bản sao đám mây. Giữ nguyên video trên máy chủ.".to_owned()
@@ -411,6 +448,10 @@ pub async fn backup_worker(app:App){
 }
 #[cfg(test)]mod tests {
  use super::*;
+ #[test]fn legacy_policy_preserves_storage(){
+ let p:Policy=serde_json::from_str(r#"{"drive_enabled":false,"local_days":1}"#).unwrap();
+ assert!(p.backup_enabled&&p.local_enabled);assert!(!p.drive_enabled);assert_eq!(p.r2_enabled,None);assert_eq!(p.local_days,1);
+}
  #[test]fn requires_matching_copy_in_every_active_source(){
  let path="2026-11-22/07/bep/01.02.mp4";
  let good=BTreeMap::from([(path.to_owned(),100)]);
