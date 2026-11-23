@@ -351,7 +351,8 @@ async fn expire(remote:&Remote,days:u32,source:&str)->Result<(),Problem>{
  if !expired.is_empty(){
   let file=format!("/app-data/cloud-expire-{source}.txt");
   private(&file,expired.join("\n").as_bytes()).await?;
-  let result=output(remote,&["delete",&remote.target,"--files-from",&file],180).await;
+  if !source_enabled(source).await{return Ok(());}
+  let result=backup_output(remote,&["delete",&remote.target,"--files-from",&file],180,source).await;
   let _=fs::remove_file(file).await;result?;
  }
  Ok(())
@@ -414,7 +415,9 @@ async fn cleanup_local(app:&App,p:&Policy)->Result<usize,Problem>{
   let file=app.recordings.join(&path);
   let Ok(meta)=fs::symlink_metadata(&file).await else{continue;};
   if !meta.file_type().is_file()||meta.len()==0{continue;}
-  if !policy().await.backup_enabled{return Ok(removed);}
+  let current=policy().await;
+  if !current.backup_enabled{return Ok(removed);}
+  if !is_staging(&current,&file)&&!clip_time(&path).is_some_and(|at|old_enough(at,now,current.local_days)){continue;}
   if copies_confirmed(&path,meta.len(),&verified){
    if fs::remove_file(&file).await.is_ok(){removed+=1;}
   }
@@ -448,6 +451,16 @@ pub async fn backup_worker(app:App){
 }
 #[cfg(test)]mod tests {
  use super::*;
+ #[test]fn staging_keeps_old_archives_and_is_reversible(){
+ let path=std::env::temp_dir().join(format!("camerahome-stage-{}",std::process::id()));
+ std::fs::write(&path,b"test").unwrap();
+ let modified=path.metadata().unwrap().modified().unwrap().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+ let mut p=Policy{local_enabled:false,local_off_since:Some(modified+1000),..Policy::default()};
+ assert!(!is_staging(&p,&path));
+ p.local_off_since=Some(modified-1000);assert!(is_staging(&p,&path));
+ p.local_enabled=true;assert!(!is_staging(&p,&path));
+ std::fs::remove_file(path).unwrap();
+}
  #[test]fn legacy_policy_preserves_storage(){
  let p:Policy=serde_json::from_str(r#"{"drive_enabled":false,"local_days":1}"#).unwrap();
  assert!(p.backup_enabled&&p.local_enabled);assert!(!p.drive_enabled);assert_eq!(p.r2_enabled,None);assert_eq!(p.local_days,1);
