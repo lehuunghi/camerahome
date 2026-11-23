@@ -153,3 +153,9 @@ cargo test --release
 python3 -m py_compile scripts/*.py
 systemctl status camerahome-clips.timer camerahome-lan.timer camerahome-purge.path
 ```
+
+### Công tắc sao lưu
+
+Trong Quản trị, mục **Bật/tắt sao lưu** có công tắc tổng và lựa chọn riêng cho máy chủ, Google Drive, Cloudflare R2. Kết nối kho và thời gian giữ video nằm riêng bên dưới. Cấu hình cũ mặc định giữ nguyên lưu máy chủ và trạng thái đám mây.
+
+Tắt lưu máy chủ vẫn cho phép tạo file tạm để tải lên các kho đang bật. File mới ở chế độ này không xuất hiện trong nguồn xem lại Máy chủ và chỉ được dọn sau khi xác nhận đủ dung lượng trên mọi kho đang bật. Video cũ không bị xóa bởi thao tác tắt; vẫn theo hạn lưu đã đặt. Không có kho nào bật hoặc tắt công tắc tổng sẽ dừng tạo video nén mới; Frigate vẫn giữ bộ đệm gốc theo cấu hình camera. Công tắc không xóa dữ liệu và không chặn xem video đã lưu. Tiến trình tải lên đang chạy kiểm tra công tắc mỗi 2 giây; bộ xử lý video kiểm tra trước mỗi đoạn. Worker sao lưu kiểm tra mỗi 5 phút.
