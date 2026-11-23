@@ -99,8 +99,10 @@ async fn clips(State(app): State<App>, Extension(user): Extension<accounts::Prin
     if !valid_day || filter.camera.as_deref().is_some_and(|id| !camera_id(id)) {
         return Err(StatusCode::BAD_REQUEST);
     }
+    let storage_policy=cloud::policy().await;
     tokio::task::spawn_blocking(move || {
-        let mut clips = clips_for_day(app.recordings, filter)?;
+        let mut clips = clips_for_day(app.recordings.clone(), filter)?;
+        clips.retain(|path|!cloud::is_staging(&storage_policy,&app.recordings.join(path)));
         clips.retain(|path| path.split('/').nth(2).is_some_and(|id| user.has_camera(id)));
         Ok::<_, std::io::Error>(clips)
     })
@@ -110,13 +112,15 @@ async fn clips(State(app): State<App>, Extension(user): Extension<accounts::Prin
 
 async fn latest_clips(State(app): State<App>, axum::extract::Path(id): axum::extract::Path<String>) -> Result<Json<Value>, StatusCode> {
     if !camera_id(&id) { return Err(StatusCode::BAD_REQUEST); }
+    let storage_policy=cloud::policy().await;
     let result = tokio::task::spawn_blocking(move || -> std::io::Result<Value> {
         let mut days = entries(&app.recordings)?;
         days.sort_unstable_by_key(|entry| std::cmp::Reverse(entry.file_name()));
         for entry in days.into_iter().take(31) {
             let day = entry.file_name().to_string_lossy().into_owned();
             if !entry.file_type()?.is_dir() || !valid_recording_day(&day) { continue; }
-            let clips = clips_for_day(app.recordings.clone(), Selection {day: day.clone(), camera: Some(id.clone())})?;
+            let mut clips = clips_for_day(app.recordings.clone(), Selection {day: day.clone(), camera: Some(id.clone())})?;
+            clips.retain(|path|!cloud::is_staging(&storage_policy,&app.recordings.join(path)));
             if !clips.is_empty() { return Ok(serde_json::json!({"day":day,"clips":clips})); }
         }
         Ok(serde_json::json!({"day":null,"clips":[]}))
