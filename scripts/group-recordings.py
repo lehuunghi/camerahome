@@ -107,7 +107,28 @@ print(json.dumps(allowed))"""
     return {p.removeprefix('/media/frigate/recordings/') for p in json.loads(result.stdout)}
 
 
+def backup_destination_enabled():
+    # Legacy installations keep local recording enabled.
+    try:
+        policy_path = Path("/opt/camerahome-data/cloud-policy.json")
+        policy = json.loads(policy_path.read_text()) if policy_path.exists() else {}
+        if not policy.get("backup_enabled", True):
+            return False
+        if policy.get("local_enabled", True):
+            return True
+        data = policy_path.parent
+        drive = policy.get("drive_enabled", True) and (data / "drive.conf").exists() and (data / "drive-folder").exists()
+        r2_path = data / "r2.json"
+        r2_config = json.loads(r2_path.read_text()) if r2_path.exists() else {}
+        r2 = bool(r2_config) and policy.get("r2_enabled", r2_config.get("enabled", False))
+        return bool(drive or r2)
+    except (OSError, ValueError):
+        return False
+
+
 def main():
+    if not backup_destination_enabled():
+        return
     now = time.time()
     progress = json.loads(STATE.read_text()) if STATE.exists() else {}
     groups = collections.defaultdict(list)
@@ -120,6 +141,8 @@ def main():
     for camera, items in groups.items():
         try:
             for batch in batches(sorted(items), now):
+                if not backup_destination_enabled():
+                    return
                 export(batch)
                 progress[camera] = batch[-1][0]
                 write_progress(progress)
