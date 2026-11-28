@@ -117,7 +117,7 @@ code { overflow-wrap:anywhere; }
 .tool-group{display:flex;gap:5px;align-items:center}.tool-group+.tool-group{border-left:1px solid #405c54;padding-left:7px}.tool-group[hidden]{display:none}
 .video-frame{position:relative;overflow:hidden;background:#081412;touch-action:pan-y}.video-frame[data-zoomed=true]{touch-action:none;cursor:grab}.video-frame[data-zoomed=true]:active{cursor:grabbing}
 .video-frame video{transform-origin:center;will-change:transform}.video-frame:fullscreen video{height:100%;max-height:none}.video-frame[data-zoomed=true] video{pointer-events:none}
-#replay-frame{border-radius:13px;margin-top:10px}#replay-frame:has(#player[hidden]){display:none}#replay-frame #player{margin:0}
+#replay-frame{border-radius:13px;margin-top:10px}#replay-frame #player{margin:0}
 .card .actions button{min-width:34px;min-height:34px;font-size:1.02rem;border-radius:8px}.monitor #ptz-status{padding:0 16px 12px;color:#d0e5dc;font-size:.85rem}
 
 .panel,.card,.monitor,.camera-preview,nav,nav a,button,input,select,
@@ -173,6 +173,7 @@ body{font-size:15px}.bar,.notice{font-size:13px;color:#626262}form label{font-si
 @media(max-width:680px){nav a{justify-content:center;gap:7px}nav svg{width:18px;height:18px}form input,form select{font-size:16px}.bar,.notice{font-size:13px}.camera-meta strong{font-size:13px}}
 @media(prefers-color-scheme:dark){.bar,.notice,form label{color:#b6b6b6}}
 
+#replay-stage{position:relative;width:100%;aspect-ratio:16/9;max-height:58vh;transform-origin:center}#replay-stage video{position:absolute;inset:0;display:block;width:100%;height:100%;max-height:none;object-fit:contain;margin:0;border-radius:5px;pointer-events:none}#replay-stage video[hidden],#replay-frame[hidden]{display:none}
 </style></head>
 <body>
 <header><div class="shell header-row"><div class="brand"><span aria-hidden="true" class="brand-icon"></span><span id="site-brand">CameraHome</span></div>
@@ -197,7 +198,7 @@ body{font-size:15px}.bar,.notice{font-size:13px;color:#626262}form label{font-si
 <section class="panel" id="recordings"><h2 id="recordings-title">Xem lại</h2>
 <p id="recording-source-summary" class="notice">Nguồn: Máy chủ</p>
 <div class="filters recording-filters"><label><input aria-label="Chọn ngày" id="day" type="date"></label><label>Camera <select id="filter"><option value="">Tất cả</option></select></label></div>
-<div class="video-frame" id="replay-frame"><video id="player" playsinline hidden></video></div><div id="replay-download" hidden><a id="download-clip" download aria-label="Tải clip đang xem về máy" title="Tải clip đang xem về máy"><span aria-hidden="true">⤓</span></a></div>
+<div class="video-frame" id="replay-frame" hidden><div id="replay-stage"><video id="player" playsinline preload="auto" hidden></video><video id="player-next" playsinline preload="auto" hidden></video></div></div><div id="replay-download" hidden><a id="download-clip" download aria-label="Tải clip đang xem về máy" title="Tải clip đang xem về máy"><span aria-hidden="true">⤓</span></a></div>
 <div class="timeline-track" id="timeline-marks" aria-hidden="true"></div>
 <input aria-label="Kéo tới thời gian trong ngày" class="timeline-input" id="timeline" type="range" min="0" max="86399" value="0" step="1" disabled>
 <div class="timeline-times"><span>00:00</span><output id="timeline-time">00:00:00</output><span>24:00</span></div>
@@ -353,7 +354,8 @@ for (const [id,[glyph,label]] of Object.entries(buttonIcons)) setIcon(el(id),gly
 for (const [id,glyph,label] of [['camera-form','+','Thêm camera'],['settings-form','✓','Lưu thay đổi'],['drive-form','↗','Kết nối Google Drive']]) {
   setIcon(el(id).querySelector('button[type=submit]'),glyph,label);
 }
-const day = el('day'), filter = el('filter'), player = el('player');
+const day = el('day'), filter = el('filter');
+let player = el('player');
 const dayMs = 86400000, vietnamOffset = 7 * 3600000;
 const today = new Date(Date.now() + vietnamOffset).toISOString().slice(0,10);
 day.value = today;
@@ -437,8 +439,10 @@ async function cameras() {
   }
 }
 const timeline = el('timeline'), speed = el('speed');
-let rows = [], activePath = '', queuedSeek = 0, playing = false, stepped = false, cursor = 0;
-let dragging = false, lastTick = 0;
+let rows = [], activePath = '', playing = false, stepped = false, cursor = 0;
+let dragging = false, lastTick = 0, replayGeneration = 0, transition = null, replayMuted = false;
+let lastProgress = 0, progressTime = 0, retryTimer;
+const replayVideos = [player, el('player-next')], slots = new Map();
 const fmt = seconds => [Math.floor(seconds/3600),Math.floor(seconds/60)%60,Math.floor(seconds)%60].map(x=>String(x).padStart(2,'0')).join(':');
 const dayStart = date => Date.parse(date + 'T00:00:00+07:00');
 function timestamp(path) {
@@ -465,83 +469,137 @@ function updateButtons() {
   el('next-clip').disabled = !seq.length || index === seq.length - 1;
   el('clips').querySelectorAll('button').forEach(button => button.classList.toggle('active-clip',button.dataset.path === activePath));
 }
-function stopReplay() {playing = false; player.pause(); updateButtons();}
+function stopReplay() {playing = false; clearTimeout(retryTimer);retryTimer=null; replayVideos.forEach(video=>video.pause()); updateButtons();}
 function resetReplay() {
+  ++replayGeneration; transition=null; clearTimeout(retryTimer);retryTimer=null;
   resetReplayZoom();
   el('replay-download').hidden=true;
   el('download-clip').removeAttribute('href');
-  stopReplay(); activePath = ''; player.removeAttribute('src'); player.load(); player.hidden = true;
-  el('playback-state').textContent = '';
+  stopReplay(); activePath=''; stepped=false; slots.clear();
+  replayVideos.forEach(video=>{video.removeAttribute('src');video.load();video.hidden=true;video.style.opacity='0';});
+  el('replay-frame').hidden=true;
+  el('playback-state').textContent='';
+}
+function guardedPlay(video) {
+  const generation=replayGeneration, path=activePath;
+  video.play().catch(error=>{
+    if(generation!==replayGeneration || video!==player || path!==activePath || transition || !playing || error.name==='AbortError')return;
+    stopReplay();el('playback-state').textContent='Bấm Phát để tiếp tục xem có tiếng.';
+  });
 }
 function applyRate() {
-  const rate = Number(speed.value);
-  stepped = false;
-  try {player.playbackRate = rate; stepped = Math.abs(player.playbackRate-rate) > .001;}
-  catch {stepped = true;}
-  if (stepped) {cursor = player.currentTime; lastTick = performance.now(); player.pause();}
-  if (playing && !stepped) player.play().catch(() => {playing = false; updateButtons(); el('playback-state').textContent = 'Bấm Phát để tiếp tục xem.';});
-  el('playback-state').textContent = stepped ? 'Tốc độ này dùng tua theo khung hình trên trình duyệt hiện tại.' : '';
+  if(transition)return;
+  const rate=Number(speed.value);stepped=false;
+  try{player.playbackRate=rate;stepped=Math.abs(player.playbackRate-rate)>.001;}catch{stepped=true;}
+  if(stepped){cursor=player.currentTime;lastTick=performance.now();player.pause();}
+  if(playing&&!stepped)guardedPlay(player);
+  el('playback-state').textContent=stepped?'Tốc độ này dùng tua theo khung hình trên trình duyệt hiện tại.':'';
 }
-function playClip(path, offset=0, autoplay=true) {
-  const row = rows.find(item => item.path === path);
-  if (!row) return;
-  playing = autoplay;
-  queuedSeek = offset;
-  activePath = path;
-  const download=el('download-clip');
-  download.href=mediaUrl(path);
-  download.download=path.split('/').join('_');
-  el('replay-download').hidden=false;
-  player.hidden = false;
-  setClock(row.second+offset);
-  player.src = mediaUrl(path);
-  updateButtons();
+function loadSlot(video,path,offset=0,retries=0) {
+  const slot={path,url:mediaUrl(path),offset,retries,ready:false,failed:false,started:performance.now()};
+  slots.set(video,slot);video.pause();video.muted=true;video.preload='auto';
+  video.hidden=false;video.style.opacity='0';video.src=slot.url;video.load();
+  return slot;
 }
-function advance(direction=1) {
-  const seq = playlist(), index=seq.findIndex(row => row.path === activePath);
-  const next=seq[index+direction];
-  if (next) playClip(next.path,0,playing || index<0);
-  else stopReplay();
+function prefetchNext() {
+  if(transition||!activePath)return;
+  const seq=playlist(),index=seq.findIndex(row=>row.path===activePath),next=seq[index+1];
+  if(!next)return;
+  const idle=replayVideos.find(video=>video!==player),slot=slots.get(idle);
+  if(slot?.path===next.path && slot.url===mediaUrl(next.path))return;
+  loadSlot(idle,next.path);
 }
-player.addEventListener('loadedmetadata',() => {
-  const row = active();
-  if (row && Number.isFinite(player.duration)) row.duration = player.duration;
-  player.currentTime = Math.min(queuedSeek, Math.max(0, player.duration-.03));
-  applyRate();
-});
-player.addEventListener('timeupdate',() => {const row=active(); if(row) setClock(row.second+player.currentTime);});
-player.addEventListener('ended',() => advance());
-player.addEventListener('error',() => {
-  if (!activePath) return;
-  stopReplay();
-  el('playback-state').textContent=el('recording-source').value==='local'?'Không mở được đoạn này. Bấm Phát để thử lại.':'Kho đám mây chưa trả được video hoặc đang giới hạn API. Bấm Phát để thử lại.';
-});
-setInterval(() => {
-  if (!stepped || !playing || player.readyState < 2) return;
-  const now = performance.now(); cursor += Math.min(350,now-lastTick)/1000*Number(speed.value); lastTick = now;
-  if (cursor >= player.duration) advance();
-  else if (!player.seeking && Math.abs(player.currentTime-cursor) >= .04) player.currentTime = cursor;
+function commitTransition(video,slot) {
+  if(!transition || transition.video!==video || transition.slot!==slot || activePath!==slot.path || !slot.ready)return;
+  const old=player;old.pause();old.muted=true;
+  player=video;player.muted=replayMuted;player.style.opacity='1';player.hidden=false;
+  if(old!==player){old.style.opacity='0';old.hidden=true;}
+  transition=null;lastProgress=performance.now();progressTime=player.currentTime;
+  setClock(active().second+player.currentTime);applyRate();updateButtons();prefetchNext();
+}
+function playClip(path,offset=0,autoplay=true,retries=0) {
+  const row=rows.find(item=>item.path===path);if(!row)return;
+  ++replayGeneration;clearTimeout(retryTimer);retryTimer=null;playing=autoplay;stepped=false;player.pause();
+  activePath=path;
+  const video=replayVideos.find(item=>item!==player),cached=slots.get(video);
+  const slot=cached?.path===path && cached.url===mediaUrl(path) && !cached.failed && !retries ? cached : loadSlot(video,path,offset,retries);
+  slot.offset=Math.max(0,offset);slot.retries=retries;slot.started=performance.now();
+  transition={video,slot};el('replay-frame').hidden=false;
+  const download=el('download-clip');download.href=mediaUrl(path);download.download=path.split('/').join('_');el('replay-download').hidden=false;
+  setClock(row.second+offset);el('playback-state').textContent='Đang chuẩn bị đoạn tiếp theo…';updateButtons();
+  if(video.readyState>=1)seekSlot(video,slot);
+  if(slot.ready && !video.seeking)commitTransition(video,slot);
+}
+function seekSlot(video,slot) {
+  if(slots.get(video)!==slot || !Number.isFinite(video.duration))return;
+  const row=rows.find(item=>item.path===slot.path);if(row)row.duration=video.duration;
+  const seek=Math.min(slot.offset,Math.max(0,video.duration-.03));
+  if(Math.abs(video.currentTime-seek)>.03){slot.ready=false;video.currentTime=seek;}
+}
+function advance(direction=1,automatic=false) {
+  if(automatic && (!playing||transition))return;
+  const seq=playlist(),index=seq.findIndex(row=>row.path===activePath),next=seq[index+direction];
+  if(next)playClip(next.path,0,playing||index<0);
+  else{stopReplay();el('playback-state').textContent='Đã xem hết các đoạn hiện có. Chọn thời gian khác để xem lại.';}
+}
+function retryReplay(video,slot) {
+  if(slots.get(video)!==slot || slot.path!==activePath || (video!==player && transition?.slot!==slot))return;
+  if(retryTimer)return;
+  slot.failed=true;
+  const generation=replayGeneration,offset=video===player ? video.currentTime : slot.offset;
+  el('playback-state').textContent='Đang kết nối lại đoạn video…';
+  retryTimer=setTimeout(()=>{
+    retryTimer=null;if(generation!==replayGeneration || !playing)return;
+    if(slot.retries<2)playClip(slot.path,offset,true,slot.retries+1);
+    else{transition=null;advance(1,true);}
+  },Math.min(8000,2000*(slot.retries+1)));
+}
+for(const video of replayVideos) {
+  video.addEventListener('loadedmetadata',()=>{const slot=slots.get(video);if(slot&&video.readyState>=1)seekSlot(video,slot);});
+  const ready=()=>{const slot=slots.get(video);if(!slot||video.readyState<2||video.seeking||video.error)return;slot.ready=true;commitTransition(video,slot);};
+  video.addEventListener('loadeddata',ready);video.addEventListener('canplay',ready);video.addEventListener('seeked',ready);
+  video.addEventListener('timeupdate',()=>{
+    if(video!==player||transition||slots.get(video)?.path!==activePath)return;
+    const row=active();if(row)setClock(row.second+video.currentTime);
+    if(video.currentTime!==progressTime){progressTime=video.currentTime;lastProgress=performance.now();}
+  });
+  video.addEventListener('ended',()=>{if(video===player&&!transition&&video.ended&&slots.get(video)?.path===activePath)advance(1,true);});
+  video.addEventListener('error',()=>{const slot=slots.get(video);if(!slot||!video.error)return;slot.failed=true;if(playing)retryReplay(video,slot);});
+}
+setInterval(()=>{
+  if(transition||!stepped||!playing||player.readyState<2)return;
+  const now=performance.now();cursor+=Math.min(350,now-lastTick)/1000*Number(speed.value);lastTick=now;
+  if(cursor>=player.duration)advance(1,true);
+  else if(!player.seeking&&Math.abs(player.currentTime-cursor)>=.04)player.currentTime=cursor;
 },100);
-el('toggle-replay').onclick = () => {
-  if (playing) stopReplay();
-  else if (player.error && activePath) playClip(activePath,Number.isFinite(player.currentTime)?player.currentTime:0);
-  else if (!activePath && rows.length) playClip(rows[0].path);
-  else {playing=true; applyRate(); updateButtons();}
+setInterval(()=>{
+  if(!playing||document.hidden||currentView!=='recordings')return;
+  const video=transition?.video||player,slot=slots.get(video);if(!slot)return;
+  if(performance.now()-(transition?slot.started:lastProgress)>45000 && (transition||(!stepped&&!player.paused)))retryReplay(video,slot);
+},1000);
+el('toggle-replay').onclick=()=>{
+  if(playing)stopReplay();
+  else if(!activePath&&rows.length)playClip(rows[0].path);
+  else if(transition){playing=true;if(transition.slot.failed)playClip(activePath,transition.slot.offset);else updateButtons();}
+  else if(player.error&&activePath)playClip(activePath,Number.isFinite(player.currentTime)?player.currentTime:0);
+  else if(player.ended)advance(1,false);
+  else{playing=true;lastProgress=performance.now();applyRate();updateButtons();}
 };
-el('prev-clip').onclick = () => advance(-1);
-el('next-clip').onclick = () => advance(1);
-el('mute-replay').onclick = () => {player.muted=!player.muted;setIcon(el('mute-replay'),player.muted?'◖×':'◖))',player.muted?'Bật tiếng bản ghi':'Tắt tiếng bản ghi');};
-speed.onchange = () => {if(activePath) applyRate();};
-timeline.oninput = () => {dragging=true;el('timeline-time').textContent=fmt(Number(timeline.value));};
-timeline.onchange = () => {
-  dragging=false;
-  const at = Number(timeline.value), seq=playlist();
-  const row = seq.find(item => item.second <= at && at < item.second+item.duration) || seq.find(item => item.second >= at) || seq.at(-1);
-  if (row) playClip(row.path,at >= row.second && at < row.second+row.duration ? at-row.second : 0,true);
+el('prev-clip').onclick=()=>advance(-1);
+el('next-clip').onclick=()=>advance(1);
+el('mute-replay').onclick=()=>{replayMuted=!replayMuted;player.muted=replayMuted;setIcon(el('mute-replay'),replayMuted?'◖×':'◖))',replayMuted?'Bật tiếng bản ghi':'Tắt tiếng bản ghi');};
+speed.onchange=()=>{if(activePath)applyRate();};
+timeline.oninput=()=>{dragging=true;el('timeline-time').textContent=fmt(Number(timeline.value));};
+timeline.onchange=()=>{
+  dragging=false;const at=Number(timeline.value),seq=playlist();
+  const row=seq.find(item=>item.second<=at&&at<item.second+item.duration)||seq.find(item=>item.second>=at)||seq.at(-1);
+  if(row)playClip(row.path,at>=row.second&&at<row.second+row.duration?at-row.second:0,true);
 };
 function showClips(list) {
   const start = dayStart(day.value);
   const previous = new Map(rows.map(row => [row.path,row.duration]));
+  const retained=active();
+  if(retained&&!list.includes(retained.path))list=[...list,retained.path];
   rows = [...new Set(list)].map(path => ({path,camera:path.split('/')[2],second:(timestamp(path)-start)/1000,duration:previous.get(path)||10}))
     .filter(row => row.second>=0 && row.second<86400).sort((a,b)=>a.second-b.second||a.path.localeCompare(b.path));
   timeline.disabled = !rows.length;
@@ -561,7 +619,7 @@ function showClips(list) {
     button.onclick=()=>playClip(row.path);item.append(button);return item;
   }));
   if (activePath && !active()) resetReplay();
-  updateButtons();
+  updateButtons();prefetchNext();
 }
 let pendingClips=null,displayedClipKey='';
 async function clips(onReady) {
@@ -574,7 +632,7 @@ async function clips(onReady) {
   }
   const current=++requestId,start=dayStart(selectedDay);
   if(!Number.isFinite(start)){showClips([]);return;}
-  const callbacks=typeof onReady==='function'?[onReady]:[],received=[];
+  const callbacks=typeof onReady==='function'?[onReady]:[];
   const promise=(async()=>{
     const utcDays=[...new Set([start,start+dayMs-1].map(t=>new Date(t).toISOString().slice(0,10)))];
     const results=await Promise.allSettled(utcDays.map(async date=>{
@@ -582,16 +640,17 @@ async function clips(onReady) {
       if(selectedCamera)query.set('camera',selectedCamera);
       if(source!=='local')query.set('source',source);
       const part=await read((source==='local'?'/api/clips?':'/api/cloud/clips?')+query);
-      if(current===requestId){
-        received.push(...part);showClips(received);displayedClipKey=key;
-        if(rows.length){if(pendingClips?.promise===promise)pendingClips.ready=true;callbacks.splice(0).forEach(callback=>callback());}
-      }
       return part;
     }));
     if(current!==requestId)return;
     const good=results.filter(result=>result.status==='fulfilled');
     const failed=results.filter(result=>result.status==='rejected');
-    if(!good.length&&displayedClipKey!==key)showClips([]);
+    if(good.length){
+      const list=good.flatMap(result=>result.value);
+      if(failed.length&&displayedClipKey===key)list.push(...rows.map(row=>row.path));
+      showClips(list);displayedClipKey=key;
+      if(rows.length){if(pendingClips?.promise===promise)pendingClips.ready=true;callbacks.splice(0).forEach(callback=>callback());}
+    }else if(displayedClipKey!==key)showClips([]);
     if(failed.length)el('results').textContent=(good.length?el('results').textContent+' · Chưa tải đủ khoảng thời gian. ':'')+(failed[0].reason.message||'Chưa lấy được danh sách video. Thử lại sau.');
   })();
   pendingClips={key,promise,callbacks,ready:false};
@@ -603,11 +662,11 @@ async function openCamera(id,replay) {
   if(replay){stopStream();el('recordings').scrollIntoView({block:'start'});}
   else startLive(id);
   if (!allowed('recordings')) return;
-  let current=requestId;
+  let current=requestId;const selection=replayGeneration;
   el('results').textContent='Đang tìm bản ghi gần nhất…';
   try {
     if(el('recording-source').value!=='local'){
-      await clips(()=>{if(replay&&filter.value===id&&currentView==='recordings'&&rows.length)playClip(rows.at(-1).path);});return;
+      await clips(()=>{if(replay&&selection===replayGeneration&&!activePath&&filter.value===id&&currentView==='recordings'&&rows.length)playClip(rows.at(-1).path);});return;
     }
     current=++requestId;
     const result=await read('/api/clips/latest/'+encodeURIComponent(id));
@@ -615,7 +674,7 @@ async function openCamera(id,replay) {
     if(result.clips.length) day.value=new Date(timestamp(result.clips[0])+vietnamOffset).toISOString().slice(0,10);
     const nextId=requestId+1;
     await clips();
-    if(replay && nextId===requestId && rows.length) playClip(rows.at(-1).path);
+    if(replay && selection===replayGeneration && !activePath && currentView==='recordings' && nextId===requestId && rows.length) playClip(rows.at(-1).path);
   } catch {if(current===requestId) el('results').textContent='Không tải được danh sách bản ghi.';}
 }
 let cleanupSelection=null;
@@ -838,7 +897,7 @@ function zoomControls(prefix, frame, video) {
   render(); return reset;
 }
 const resetLiveZoom=zoomControls('live',el('live-frame'),liveVideo);
-const resetReplayZoom=zoomControls('replay',el('replay-frame'),player);
+const resetReplayZoom=zoomControls('replay',el('replay-frame'),el('replay-stage'));
 el('live-fullscreen').onclick=()=>{
   const frame=el('live-frame');
   if (document.fullscreenElement) {document.exitFullscreen?.();return;}
@@ -962,7 +1021,7 @@ function startLive(id, keepZoom=false, attempt=0) {
     }
   },3000);
   stopStream = () => {
-    ended = true; clearTimeout(watchdog); clearTimeout(retryTimer); clearInterval(progressTimer); ws.close(); video.removeAttribute('src'); video.load();
+    ended = true; clearTimeout(watchdog); clearTimeout(retryTimer);retryTimer=null; clearInterval(progressTimer); ws.close(); video.removeAttribute('src'); video.load();
     URL.revokeObjectURL(objectUrl); panel.hidden = true;
   };
 }
