@@ -44,10 +44,13 @@ class Index:
         with self.connect() as db:
             db.execute('INSERT INTO events VALUES(?,?,?,?)', (camera, at, kind, score))
 
-    def active(self, camera, start, end, pre=8, post=12):
+    def active(self, camera, start, end, pre=3, post=5, kinds=None):
+        kinds=('motion','crying') if kinds is None else tuple(kinds)
+        if not kinds:return False
         with self.connect() as db:
-            return db.execute('SELECT 1 FROM events WHERE camera=? AND at>=? AND at<=? LIMIT 1',
-                              (camera, start-post, end+pre)).fetchone() is not None
+            return db.execute('SELECT 1 FROM events WHERE camera=? AND at>=? AND at<=? AND kind IN ('+
+                              ','.join('?' for _ in kinds)+') LIMIT 1',
+                              (camera,start-post,end+pre,*kinds)).fetchone() is not None
 
     def register(self, file, root, camera, at, duration):
         relative = file.relative_to(root).as_posix()
@@ -67,6 +70,7 @@ class Index:
 
     def next_copy(self, source, target, r2_first=None):
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             gate=" AND EXISTS (SELECT 1 FROM copies r WHERE r.path=q.path AND r.source='r2' AND r.target=? AND r.state='done')" if r2_first else ""
             params=[source,target,time.time()]+([r2_first] if r2_first else [])
             row = db.execute("""SELECT c.*,q.attempts FROM copies q JOIN clips c USING(path)

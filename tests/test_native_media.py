@@ -71,6 +71,35 @@ class NativeMediaTests(unittest.IsolatedAsyncioTestCase):
         info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(output)]))
         self.assertTrue(any(s['codec_type']=='audio' and s['codec_name']=='aac' for s in info['streams']))
 
+    async def test_drive_streams_from_r2_without_local_spool(self):
+        import hashlib
+        service=self.service;content=b'verified camera recording'
+        file=service.ROOT/'2026-11-28/10/test/00.00.mp4';file.parent.mkdir(parents=True);file.write_bytes(content)
+        path=service.INDEX.register(file,service.ROOT,'test',1795860000.,2)
+        service.INDEX.enqueue('r2','r2:bucket/recordings');service.INDEX.complete(path,'r2','r2:bucket/recordings')
+        service.INDEX.enqueue('drive','drive:folder/recordings');row=service.INDEX.next_copy('drive','drive:folder/recordings')
+        file.unlink();calls=[];old_cloud=service.cloud
+        async def fake_cloud(remote,args,source):
+            calls.append((remote,args,source))
+            if args[0]=='lsjson':return json.dumps({'Size':len(content),'Hashes':{'MD5':hashlib.md5(content).hexdigest()}}).encode()
+            return b''
+        service.cloud=fake_cloud
+        try:
+            remote={'target':'drive:folder/recordings','config':'drive.conf','env':{}}
+            targets={'r2':{'target':'r2:bucket/recordings','env':{'RCLONE_CONFIG_R2_TYPE':'s3'}},'drive':remote}
+            await service.transfer('drive',row,remote,targets)
+            copy=next(c for c in calls if c[1][0]=='copyto')
+            self.assertTrue(copy[1][1].startswith('r2:'))
+            self.assertTrue(copy[1][2].startswith('drive:'))
+            self.assertIn('RCLONE_CONFIG_R2_TYPE',copy[0]['env'])
+            self.assertFalse(list(service.SPOOL.glob('*.mp4')))
+            self.assertTrue(service.INDEX.confirmed(path,[('drive',remote['target'])]))
+        finally:service.cloud=old_cloud
+
+    async def test_safe_cloud_error_never_exposes_credentials(self):
+        reason=self.service.safe_cloud_error(b'403 rateLimitExceeded secret-token')
+        self.assertIn('API',reason);self.assertNotIn('secret-token',reason)
+
     async def test_stopping_a_full_video_pipe_does_not_hang(self):
         proc=await self.service.spawn(['ffmpeg','-loglevel','error','-f','lavfi','-i',
             'testsrc2=size=1920x1080:rate=30','-pix_fmt','yuv420p','-f','rawvideo','pipe:1'],True)
@@ -114,6 +143,10 @@ class MotionTests(unittest.TestCase):
         for _ in range(20):detector.feed(frame)
         moving=frame.copy();moving[50:90,100:150]=200
         self.assertFalse(detector.feed(moving)[0])
-        self.assertTrue(detector.feed(moving)[0])
+        moving2=frame.copy();moving2[50:90,104:154]=200
+        self.assertFalse(detector.feed(moving2)[0])
+        moving3=frame.copy();moving3[50:90,108:158]=200
+        self.assertTrue(detector.feed(moving3)[0])
+        for _ in range(12):self.assertFalse(detector.feed(moving3)[0])
 
 if __name__=='__main__':unittest.main()

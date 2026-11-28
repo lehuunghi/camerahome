@@ -36,8 +36,14 @@ EXPORT_LOCK = asyncio.Lock()
 CONFIG_LOCK = asyncio.Lock()
 
 
+_CONFIG_CACHE=None
+_CONFIG_KEY=None
 def config():
-    return yaml.safe_load(CONFIG.read_text())
+    global _CONFIG_CACHE,_CONFIG_KEY
+    stat=CONFIG.stat();key=(str(CONFIG),stat.st_mtime_ns,stat.st_size)
+    if key!=_CONFIG_KEY:
+        _CONFIG_CACHE=yaml.safe_load(CONFIG.read_text());_CONFIG_KEY=key
+    return _CONFIG_CACHE
 
 
 def paused():
@@ -53,7 +59,7 @@ def can_record():
 
 
 def ffmpeg(source):
-    return ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-threads', '1',
+    return ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-threads', '1', '-filter_threads','1','-filter_complex_threads','1',
             '-rtsp_transport', 'tcp', '-timeout', '15000000', '-i', f'{RTSP}/{source}']
 
 
@@ -83,7 +89,7 @@ def hit(camera, kind, score):
 
 
 async def motion(camera):
-    proc = await spawn(ffmpeg(camera+'__compact')+['-an', '-vf', 'fps=3,scale=320:180', '-pix_fmt', 'bgr24', '-f', 'rawvideo', 'pipe:1'], True)
+    proc = await spawn(ffmpeg(camera+'__compact')+['-an', '-vf', 'fps=3,scale=320:180', '-pix_fmt', 'bgr24','-threads','1', '-f', 'rawvideo', 'pipe:1'], True)
     detector=MotionDetector()
     try:
         while True:
@@ -122,7 +128,7 @@ class CryModel:
 
 async def crying(camera):
     model = await asyncio.to_thread(CryModel)
-    proc = await spawn(ffmpeg(camera)+['-vn', '-ac', '1', '-ar', '16000', '-f', 's16le', 'pipe:1'], True)
+    proc = await spawn(ffmpeg(camera)+['-vn', '-ac', '1', '-ar', '16000','-threads','1', '-f', 's16le', 'pipe:1'], True)
     consecutive = 0
     try:
         while True:
@@ -180,7 +186,7 @@ async def capture(camera):
     directory.mkdir(parents=True)
     began = time.time()
     (directory/'session.json').write_text(json.dumps({'camera': camera, 'at': began}))
-    proc = await spawn(ffmpeg(camera)+['-map','0:v:0','-map','0:a:0?','-c:v','copy','-c:a','aac','-b:a','48k','-ac','1',
+    proc = await spawn(ffmpeg(camera)+['-map','0:v:0','-map','0:a:0?','-c:v','copy','-c:a','aac','-b:a','48k','-ac','1','-threads','1',
         '-f','segment','-segment_time','5','-segment_format','mpegts','-reset_timestamps','1',
         '-segment_list',str(directory/'segments.csv'),str(directory/'%09d.ts')])
     try:
@@ -236,7 +242,7 @@ async def collect():
                 with INDEX.connect() as db:
                     rows = db.execute("SELECT * FROM segments WHERE camera=? AND state='buffer' AND end<? ORDER BY start", (camera,now-10)).fetchall()
                     for row in rows:
-                        if INDEX.active(camera,row['start'],row['end']):
+                        if INDEX.active(camera,row['start'],row['end'],kinds=tuple(k for k,on in zip(('motion','crying'),selected_mode(config()['cameras'].get(camera,{}))) if on)):
                             db.execute("UPDATE segments SET state='selected' WHERE path=?",(row['path'],))
                         else:
                             Path(row['path']).unlink(missing_ok=True)
@@ -247,7 +253,7 @@ async def collect():
                     if batch and (Path(row['path']).parent!=Path(batch[-1]['path']).parent or row['start']-batch[-1]['end']>2 or row['end']-batch[0]['start']>178):
                         await export_segments(camera,batch);batch=[]
                     batch.append(row)
-                if batch and now-batch[-1]['end']>25:
+                if batch and now-batch[-1]['end']>15:
                     await export_segments(camera,batch)
             with INDEX.connect() as db:
                 for row in db.execute("SELECT path FROM segments WHERE state='done'").fetchall():
@@ -268,13 +274,23 @@ async def collect():
 def cloud_command(remote, args):
     cmd=['rclone','--config',remote['config'],'--contimeout','10s','--timeout','60s','--retries','1','--low-level-retries','3']
     if remote['target'].startswith('drive:'):
-        cmd += ['--tpslimit','1','--tpslimit-burst','1','--drive-pacer-min-sleep','1s','--drive-pacer-burst','1']
+        cmd += ['--tpslimit','1','--tpslimit-burst','1','--drive-pacer-min-sleep','1s','--drive-pacer-burst','1','--drive-chunk-size','32M']
     return cmd+args
 
 
+class CloudError(RuntimeError):pass
+
+def safe_cloud_error(stderr):
+    text=stderr.decode(errors='replace').lower()
+    if any(x in text for x in ['ratelimitexceeded','rate_limit_exceeded','rate limit','429']):
+        return 'Google Drive đang giới hạn API; hệ thống sẽ tự chờ và thử lại.'
+    if 'storagequotaexceeded' in text:return 'Google Drive đã hết dung lượng.'
+    if any(x in text for x in ['invalid_grant','invalid_client']):return 'Cần kết nối lại Google Drive.'
+    return 'Kho lưu trữ chưa xác nhận tác vụ; sẽ tự thử lại.'
+
 async def cloud(remote,args,source):
     proc=await asyncio.create_subprocess_exec(*cloud_command(remote,args),env={**os.environ,**remote['env']},
-                                             stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.DEVNULL)
+                                             stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.PIPE)
     work=asyncio.create_task(proc.communicate())
     started=time.monotonic()
     try:
@@ -283,8 +299,8 @@ async def cloud(remote,args,source):
             _,targets=destination_targets(DATA)
             if paused() or source not in targets or targets[source]['target']!=remote['target'] or time.monotonic()-started>300:
                 raise RuntimeError('backup paused or timed out')
-        result,_=await work
-        if proc.returncode: raise RuntimeError('cloud request failed')
+        result,stderr=await work
+        if proc.returncode: raise CloudError(safe_cloud_error(stderr))
         return result
     finally:
         await stop(proc)
@@ -294,40 +310,40 @@ async def cloud(remote,args,source):
 
 
 async def transfer(source,row,remote,targets):
-    file=ROOT/row['path']
-    download=None
-    try:
-        if not file.exists():
-            r2=targets.get('r2')
-            if source!='drive' or not r2 or not INDEX.confirmed(row['path'], [('r2',r2['target'])]):
-                raise RuntimeError('original unavailable; preserving queue')
-            download=SPOOL/(uuid.uuid4().hex+'.mp4')
-            await cloud(r2,['copyto',r2['target']+'/'+row['path'],str(download)],'r2')
-            file=download
-        def sha256():
-            with file.open('rb') as f: return hashlib.file_digest(f,'sha256').hexdigest()
-        digest=await asyncio.to_thread(sha256)
-        if file.stat().st_size!=row['size'] or digest!=row['sha256']: raise RuntimeError('original verification failed')
-        target=remote['target']+'/'+row['path']
+    target=remote['target']+'/'+row['path']
+    r2=targets.get('r2')
+    if source=='drive' and r2 and INDEX.confirmed(row['path'],[('r2',r2['target'])]):
+        # One rclone process streams R2 -> Drive. No full-file local download.
+        origin=r2['target']+'/'+row['path']
+        source_stat=json.loads(await cloud(r2,['lsjson',origin,'--stat','--hash'],'r2'))
+        if source_stat.get('Size')!=row['size']:raise RuntimeError('R2 original verification failed')
+        bridge={**remote,'env':{**r2['env'],**remote['env']}}
+        await cloud(bridge,['copyto',origin,target,'--checksum'],source)
+        destination=json.loads(await cloud(remote,['lsjson',target,'--stat','--hash'],source))
+        if destination.get('Size')!=row['size']:raise RuntimeError('Drive size verification failed')
+        a={k.lower():v.lower() for k,v in source_stat.get('Hashes',{}).items() if isinstance(v,str)}
+        b={k.lower():v.lower() for k,v in destination.get('Hashes',{}).items() if isinstance(v,str)}
+        if a.get('md5') and b.get('md5') and a['md5']!=b['md5']:raise RuntimeError('Drive checksum verification failed')
+    else:
+        file=ROOT/row['path']
+        if not file.exists():raise RuntimeError('original unavailable; preserving queue')
+        def digest(name):
+            with file.open('rb') as f:return hashlib.file_digest(f,name).hexdigest()
+        if file.stat().st_size!=row['size'] or await asyncio.to_thread(digest,'sha256')!=row['sha256']:raise RuntimeError('original verification failed')
         await cloud(remote,['copyto',str(file),target,'--checksum'],source)
         stat=json.loads(await cloud(remote,['lsjson',target,'--stat','--hash'],source))
         hashes={k.lower():v.lower() for k,v in stat.get('Hashes',{}).items() if isinstance(v,str)}
-        if stat.get('Size')!=row['size']: raise RuntimeError('cloud size verification failed')
-        # Verify remote MD5 when the backend exposes it (Drive and single-part S3).
-        if hashes.get('md5'):
-            def md5():
-                with file.open('rb') as f: return hashlib.file_digest(f,'md5').hexdigest()
-            if hashes['md5']!=await asyncio.to_thread(md5): raise RuntimeError('cloud checksum verification failed')
-        INDEX.complete(row['path'],source,remote['target'])
-        if source=='r2':
-            policy,current=destination_targets(DATA)
-            if remove_local_after_r2(INDEX,row,ROOT,policy,current):
-                (DATA/'local-retention-status').write_text(f'R2 đã xác nhận; đã xóa video tạm trên máy chủ. Drive sao lưu từ R2.|{int(time.time())}')
-    finally:
-        if download: download.unlink(missing_ok=True)
+        if stat.get('Size')!=row['size']:raise RuntimeError('cloud size verification failed')
+        if hashes.get('md5') and hashes['md5']!=await asyncio.to_thread(digest,'md5'):raise RuntimeError('cloud checksum verification failed')
+    INDEX.complete(row['path'],source,remote['target'])
+    if source=='r2':
+        policy,current=destination_targets(DATA)
+        if remove_local_after_r2(INDEX,row,ROOT,policy,current):
+            (DATA/'local-retention-status').write_text(f'R2 đã xác nhận; đã xóa video tạm trên máy chủ. Drive sao lưu từ R2.|{int(time.time())}')
 
 
 async def uploader(source):
+    last_enqueue=0
     while True:
         row=None
         try:
@@ -335,18 +351,20 @@ async def uploader(source):
             if source in targets and not paused():
                 remote=targets[source]
                 cutoff=time.time()-remote['retention_seconds'] if remote['retention_seconds'] else 0
-                INDEX.enqueue(source,remote['target'],cutoff)
+                if time.monotonic()-last_enqueue>=3:
+                    INDEX.enqueue(source,remote['target'],cutoff);last_enqueue=time.monotonic()
                 row=INDEX.next_copy(source,remote['target'],targets['r2']['target'] if source=='drive' and 'r2' in targets else None)
                 if row:
                     await transfer(source,row,remote,targets)
                     (DATA/(source+'-status')).write_text(f'Đã xác nhận sao lưu video mới|{int(time.time())}')
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
             if row:
-                INDEX.fail(row['path'],source,remote['target'],row['attempts'],'Chưa xác nhận sao lưu; sẽ thử lại.')
-                (DATA/(source+'-status')).write_text(f'Chưa xác nhận sao lưu; giữ video và tự thử lại.|{int(time.time())}')
-        await asyncio.sleep(1 if row else 3)
+                reason=str(error) if isinstance(error,CloudError) else 'Chưa xác nhận sao lưu; giữ video và tự thử lại.'
+                INDEX.fail(row['path'],source,remote['target'],row['attempts'],reason)
+                (DATA/(source+'-status')).write_text(f'{reason}|{int(time.time())}')
+        await asyncio.sleep(.1 if row else 1)
 
 
 async def retention():
@@ -518,7 +536,7 @@ async def startup(app):
     try: CryModel();MODEL_OK=True
     except Exception: print('cry model unavailable; cry health is not ready',flush=True)
     await restart_cameras(config())
-    app['workers']=[asyncio.create_task(f()) for f in [collect,retention,import_archives]]+[asyncio.create_task(uploader(s)) for s in ['r2','drive']]
+    app['workers']=[asyncio.create_task(f()) for f in [collect,retention,import_archives]]+[asyncio.create_task(uploader(s)) for s in ['r2','drive','drive']]
 
 
 async def cleanup(app):

@@ -21,9 +21,10 @@ class NativeIndexTests(unittest.TestCase):
 
     def test_event_or_semantics_and_pre_post_buffer(self):
         self.index.event('camera',100,'crying',.8)
-        self.assertTrue(self.index.active('camera',94,96))
-        self.assertTrue(self.index.active('camera',105,110))
-        self.assertFalse(self.index.active('other',94,96))
+        self.assertTrue(self.index.active('camera',97,99))
+        self.assertTrue(self.index.active('camera',103,105))
+        self.assertFalse(self.index.active('other',97,99))
+        self.assertFalse(self.index.active('camera',97,99,kinds=('motion',)))
         self.assertFalse(self.index.active('camera',114,120))
         self.assertEqual(selected_mode({'audio':{'enabled':True},'record':{'motion':{'days':3}}}),(True,True))
 
