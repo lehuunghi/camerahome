@@ -2,7 +2,7 @@ services:
   go2rtc:
     image: ${GO2RTC_IMAGE:-alexxit/go2rtc:latest}
     restart: unless-stopped
-    volumes: ['/opt/camerahome-data/native/go2rtc.yaml:/config/go2rtc.yaml:ro']
+    volumes: ['/opt/camerahome-data/native:/config']
     networks: [camera_backend]
     logging: {driver: json-file, options: {max-size: 5m, max-file: '2'}}
   engine:
