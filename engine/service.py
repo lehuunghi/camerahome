@@ -372,6 +372,7 @@ async def retention():
 
 async def apply_streams(cfg):
     streams=cfg.get('go2rtc',{}).get('streams',{})
+    previous=config().get('go2rtc',{}).get('streams',{})
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as client:
         existing=await client.get(GO+'/api/streams')
         names=await existing.json()
@@ -379,6 +380,7 @@ async def apply_streams(cfg):
             if name not in streams:
                 async with client.delete(GO+'/api/streams',params={'src':name}) as r: await r.read()
         for name,urls in streams.items():
+            if previous.get(name)==urls: continue
             async with client.put(GO+'/api/streams',params={'name':name,'src':urls if isinstance(urls,str) else urls}) as r:
                 if r.status>=400: raise RuntimeError('stream configuration rejected')
                 await r.read()
@@ -478,10 +480,15 @@ async def ptz_ws(request):
     return ws
 
 
+class IndentedDumper(yaml.SafeDumper):
+    def increase_indent(self,flow=False,indentless=False):
+        return super().increase_indent(flow,False)
+
+
 def render_go(cfg):
     path=DATA/'native'/'go2rtc.yaml';path.parent.mkdir(exist_ok=True)
     streams=cfg.get('go2rtc',{}).get('streams',{})
-    path.write_text(yaml.safe_dump({'api':{'listen':':1984'},'rtsp':{'listen':':8554'},'streams':streams}))
+    path.write_text(yaml.dump({'api':{'listen':':1984'},'rtsp':{'listen':':8554'},'streams':streams},Dumper=IndentedDumper,sort_keys=False))
     path.chmod(0o600)
 
 
