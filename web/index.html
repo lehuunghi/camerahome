@@ -2,8 +2,9 @@
 <html lang="vi">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CameraHome</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+
 <style>
+@font-face{font-family:'Be Vietnam Pro';font-style:normal;font-weight:400;font-display:swap;src:url('/assets/be-vietnam-pro-400.ttf') format('truetype')}@font-face{font-family:'Be Vietnam Pro';font-style:normal;font-weight:600;font-display:swap;src:url('/assets/be-vietnam-pro-600.ttf') format('truetype')}
 :root {
   color-scheme: light;
   --background:#f1f6f4; --surface:#fff; --text:#142b26; --muted:#4e665e;
@@ -167,6 +168,11 @@ input,select,button{font-family:inherit;font-size:13px;border-radius:5px}input,s
 @media(max-width:680px){header{position:relative;width:100%;height:64px;background:var(--background)}.header-row.shell{padding:12px 18px;height:64px;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px}.brand{padding:0;font-size:16px}#logout{margin:0}nav{position:fixed;inset:auto 0 0;display:flex;flex-direction:row;justify-content:space-around;gap:4px;padding:8px 12px calc(8px + env(safe-area-inset-bottom));background:var(--background);border-top:1px solid var(--line);border-radius:0;box-shadow:none}nav a{flex:1;text-align:center;padding:10px 5px;font-size:12px}main.shell{width:100%;margin:0;padding:18px 18px calc(90px + env(safe-area-inset-bottom))}.view-heading{margin-bottom:20px}.live-layout{gap:22px}.grid{grid-template-columns:1fr 1fr;gap:6px}.card{grid-template-columns:1fr;padding:8px;gap:7px}.camera-preview{grid-row:auto}.camera-meta strong{font-size:12px}.actions{gap:0}.card .actions button{min-width:30px;min-height:30px}.monitor-tools{gap:4px}.tool-group{gap:2px}.icon-button{min-width:34px;padding:4px}#retention-form{grid-template-columns:1fr}.retention-target{padding:16px}#view-admin form{gap:14px}.panel{padding-block:18px}.duration-row{grid-template-columns:minmax(0,1fr) 110px}}
 @media(prefers-color-scheme:dark){:root{color-scheme:dark;--background:#212121;--surface:#2f2f2f;--text:#ececec;--muted:#aaa;--line:#424242;--accent:#ececec;--accent-pale:#383838}header{background:#171717}nav a[aria-current=page],nav a:hover{background:#303030;color:#ececec}.brand-icon{background:#ececec;color:#171717}.accent{background:#ececec;color:#171717}.accent:hover:not(:disabled){background:#ddd;color:#171717}button:hover:not(:disabled){background:#414141}.danger{background:#382421;color:#ffb4a9}@media(max-width:680px){header,nav{background:var(--background)}}}
 
+
+body{font-size:15px}.bar,.notice{font-size:13px;color:#626262}form label{font-size:14px;color:#525252}button,input,select{font-size:14px}.hint{font-size:12px;line-height:1.85}.camera-meta strong{font-size:14px}.brand-icon{background:transparent;color:var(--text)}.brand-icon:before{display:none}nav a{display:flex;align-items:center;gap:11px}nav svg{flex-shrink:0}.icon-button svg{display:block;pointer-events:none}.brand-icon svg{width:24px;height:24px}.icon-button{min-height:40px;min-width:40px}.icon-button:focus-visible{outline:2px solid #888}.camera-meta span{font-size:12px}#backup-form .check{font-size:13px}#backup-form small{font-size:11px}.duration-row label{font-size:13px}
+@media(max-width:680px){nav a{justify-content:center;gap:7px}nav svg{width:18px;height:18px}form input,form select{font-size:16px}.bar,.notice{font-size:13px}.camera-meta strong{font-size:13px}}
+@media(prefers-color-scheme:dark){.bar,.notice,form label{color:#b6b6b6}}
+
 </style></head>
 <body>
 <header><div class="shell header-row"><div class="brand"><span aria-hidden="true" class="brand-icon"></span><span id="site-brand">CameraHome</span></div>
@@ -304,15 +310,42 @@ input,select,button{font-family:inherit;font-size:13px;border-radius:5px}input,s
 </form><p id="account-status" role="status"></p></section>
 </div></main><script>
 const el = id => document.getElementById(id);
-function setIcon(button, glyph, label) {
-  const icon = document.createElement('span');
-  icon.setAttribute('aria-hidden','true');
-  icon.textContent=glyph;
-  button.replaceChildren(icon);
-  button.classList.add('icon-button');
-  button.setAttribute('aria-label',label);
-  button.title=label;
+const iconPaths={
+ '↻':'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-2L20 8M4 16l2.3 3A7 7 0 0 0 17.9 17"/>',
+ '⇥':'<path d="M9 5H5v14h4M14 8l4 4-4 4M9 12h9"/>',
+ '⌫':'<path d="M3 6h18M9 6V4h6v2M6 6l1 14h10l1-14M10 10v6M14 10v6"/>',
+ '◖×':'<path d="M11 5 6 9H3v6h3l5 4ZM16 9l5 6M21 9l-5 6"/>',
+ '◖))':'<path d="M11 5 6 9H3v6h3l5 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14"/>',
+ '⛶':'<path d="M8 3H3v5M16 3h5v5M21 16v5h-5M8 21H3v-5"/>',
+ '×':'<path d="m6 6 12 12M18 6 6 18"/>',
+ '+':'<path d="M12 5v14M5 12h14"/>',
+ '−':'<path d="M5 12h14"/>',
+ '1×':'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5M9 8h2v5"/>',
+ '✓':'<path d="m5 12 4 4L19 6"/>',
+ '▶':'<path d="m8 5 11 7-11 7Z"/>',
+ 'Ⅱ':'<path d="M8 5v14M16 5v14"/>',
+ '⏮':'<path d="M5 5v14M19 5 8 12l11 7Z"/>',
+ '⏭':'<path d="M19 5v14M5 5l11 7-11 7Z"/>',
+ '⌕':'<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+ '←':'<path d="M19 12H5m6-6-6 6 6 6"/>',
+ '→':'<path d="M5 12h14m-6-6 6 6-6 6"/>',
+ '↑':'<path d="M12 19V5m-6 6 6-6 6 6"/>',
+ '↓':'<path d="M12 5v14m-6-6 6 6 6-6"/>',
+ '↗':'<path d="M8 4h12v12M20 4 5 19"/>',
+ camera:'<rect x="3" y="6" width="14" height="12" rx="3"/><path d="m17 10 4-3v10l-4-3"/>',
+ clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ settings:'<path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'
+};
+function makeIcon(glyph){
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+ for(const [key,value] of Object.entries({viewBox:'0 0 24 24',width:'20',height:'20',fill:'none',stroke:'currentColor','stroke-width':'1.7','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true',focusable:'false'}))svg.setAttribute(key,value);
+ svg.innerHTML=iconPaths[glyph]||iconPaths.camera;return svg;
 }
+function setIcon(button,glyph,label){
+ button.replaceChildren(makeIcon(glyph));button.classList.add('icon-button');button.setAttribute('aria-label',label);button.title=label;
+}
+for(const link of document.querySelectorAll('nav [data-view]'))link.prepend(makeIcon(({live:'camera',recordings:'clock',admin:'settings'})[link.dataset.view]));
+document.querySelector('.brand-icon').replaceChildren(makeIcon('camera'));
 const buttonIcons={
   refresh:['↻','Làm mới'], logout:['⇥','Đăng xuất'], 'live-reconnect':['↻','Kết nối lại'], 'settings-reconnect':['↻','Kết nối lại'], 'settings-delete':['⌫','Xóa camera'], 'stop-live':['×','Đóng luồng'], 'live-sound':['◖×','Bật tiếng live'],
   'live-fullscreen':['⛶','Toàn màn hình'],
@@ -1036,7 +1069,7 @@ async function loadCloudSettings(){
   const state=await read('/api/storage'),policy=el('cloud-policy-form').elements,fields=el('r2-form').elements;
   policy.local_days.value=state.local_days||0;
   const retention=el('retention-form').elements;
-  for(const key of ['local','r2']){const seconds=Number(state[key+'_retention_seconds']||0);const unit=seconds%86400===0?'days':'hours';retention[key+'_unit'].value=unit;retention[key+'_value'].value=seconds/(unit==='days'?86400:3600);}
+  for(const key of ['local','r2']){const seconds=Number(state[key+'_retention_seconds']||0);const unit=state[key+'_retention_unit']||(seconds%86400===0?'days':'hours');retention[key+'_value'].max=unit==='days'?3650:87600;retention[key+'_unit'].value=unit;retention[key+'_value'].value=seconds/(unit==='days'?86400:3600);}
   el('local-retention-mode').textContent=state.local_enabled?'Đang giữ bản ghi trên máy chủ.':'Hiện xóa ngay sau khi R2 xác nhận.';
   const [localMessage,localAt]=(state.local_status||"Chưa bật tự dọn video đã sao lưu trên máy chủ.").split("|");
   el("local-retention-status").textContent=localMessage+(localAt?" · "+new Date(Number(localAt)*1000).toLocaleString("vi-VN"):"");
@@ -1062,6 +1095,7 @@ el('backup-form').onsubmit=async event=>{
   await loadCloudSettings();
  }catch(error){el('backup-result').textContent=error.message;}finally{button.disabled=false;}
 };
+for(const key of ['local','r2'])el('retention-form').elements[key+'_unit'].onchange=event=>{el('retention-form').elements[key+'_value'].max=event.target.value==='days'?3650:87600;};
 el('retention-form').onsubmit=async event=>{
  event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
  try{const body={};for(const key of ['local','r2'])body[key]={value:Number(form.elements[key+'_value'].value),unit:form.elements[key+'_unit'].value};

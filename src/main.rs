@@ -158,6 +158,8 @@ async fn main() {
         .merge(cloud::routes())
         .merge(accounts::routes())
         .route("/", get(|| async { Html(include_str!("../web/index.html")) }))
+        .route("/assets/be-vietnam-pro-400.ttf",get(||async{([(header::CONTENT_TYPE,"font/ttf"),(header::CACHE_CONTROL,"public, max-age=31536000, immutable")],include_bytes!("../web/fonts/be-vietnam-pro-400.ttf").as_slice())}))
+        .route("/assets/be-vietnam-pro-600.ttf",get(||async{([(header::CONTENT_TYPE,"font/ttf"),(header::CACHE_CONTROL,"public, max-age=31536000, immutable")],include_bytes!("../web/fonts/be-vietnam-pro-600.ttf").as_slice())}))
         .route("/api/cameras", get(cameras))
         .route("/api/snapshot/{id}", get(snapshot))
         .route("/api/clips", get(clips))

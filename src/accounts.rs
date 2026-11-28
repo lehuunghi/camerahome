@@ -80,7 +80,7 @@ pub async fn authorize(mut request: Request, next: Next) -> Response {
     }
     let path = request.extensions().get::<axum::extract::OriginalUri>()
         .map_or_else(|| request.uri().path(), |original| original.0.path());
-    if matches!((request.method().as_str(),path),("GET","/login")|("POST","/api/login")|("POST","/api/logout")) {
+    if matches!((request.method().as_str(),path),("GET"|"HEAD","/assets/be-vietnam-pro-400.ttf"|"/assets/be-vietnam-pro-600.ttf")|("GET","/login")|("POST","/api/login")|("POST","/api/logout")) {
         return next.run(request).await;
     }
     let sid = session_cookie(headers);
@@ -420,3 +420,4 @@ async fn save_site(State(app):State<App>,Extension(user):Extension<Principal>,he
   assert!(!permits(&p,&Method::GET,"/api/cloud/media/r2/2026-11-22/07/../01.02.mp4"));
  }
 }
+
