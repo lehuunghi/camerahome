@@ -1,3 +1,9 @@
+# CameraHome — bộ ghi độc lập
+
+Bản mới dùng **go2rtc + FFmpeg + phát hiện chuyển động/tiếng khóc riêng**, không cần chạy Frigate. Ghi nguyên luồng HD, chia đoạn tối đa khoảng 3 phút, hàng đợi SQLite cho R2 và Google Drive. Xem [hướng dẫn bộ ghi độc lập](engine/README.md) và [Docker Compose mới](deploy/native.compose.yaml).
+
+Các mục bên dưới mô tả cách cài Frigate cũ và được giữ để tham khảo/khôi phục.
+
 # CameraHome
 
 Giao diện quản lý camera Tapo bằng Rust/Axum, dùng Frigate để nhận RTSP, phát hiện sự kiện và ghi hình. Kho chứa mã ứng dụng, script xử lý video và các mẫu dịch vụ đang dùng trên máy chủ. Video, thông tin đăng nhập và trạng thái vận hành được lưu ngoài Git.
@@ -159,3 +165,4 @@ systemctl status camerahome-clips.timer camerahome-lan.timer camerahome-purge.pa
 Trong Quản trị, mục **Bật/tắt sao lưu** có công tắc tổng và lựa chọn riêng cho máy chủ, Google Drive, Cloudflare R2. Kết nối kho và thời gian giữ video nằm riêng bên dưới. Cấu hình cũ mặc định giữ nguyên lưu máy chủ và trạng thái đám mây.
 
 Tắt lưu máy chủ vẫn cho phép tạo file tạm để tải lên các kho đang bật. File mới ở chế độ này không xuất hiện trong nguồn xem lại Máy chủ và chỉ được dọn sau khi xác nhận đủ dung lượng trên mọi kho đang bật. Video cũ không bị xóa bởi thao tác tắt; vẫn theo hạn lưu đã đặt. Không có kho nào bật hoặc tắt công tắc tổng sẽ dừng tạo video nén mới; Frigate vẫn giữ bộ đệm gốc theo cấu hình camera. Công tắc không xóa dữ liệu và không chặn xem video đã lưu. Tiến trình tải lên đang chạy kiểm tra công tắc mỗi 2 giây; bộ xử lý video kiểm tra trước mỗi đoạn. Worker sao lưu kiểm tra mỗi 5 phút.
+

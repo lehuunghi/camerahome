@@ -98,6 +98,9 @@ class CryModel:
     def __init__(self):
         from tflite_runtime.interpreter import Interpreter
         self.model = Interpreter(model_path=str(MODEL), num_threads=1)
+        initial=self.model.get_input_details()[0]
+        if initial.get('shape_signature',np.array([])).tolist()==[-1]:
+            self.model.resize_tensor_input(initial['index'],[15600])
         self.model.allocate_tensors()
         self.input = self.model.get_input_details()[0]
         self.output = next(x for x in self.model.get_output_details() if x['shape'][-1] == 521)

@@ -22,6 +22,7 @@ if not path.exists():
     if b'/t/dd00002' not in raw or len(raw.splitlines())!=522: raise ValueError('invalid model labels')
     path.write_bytes(raw)
 PY
+docker network inspect camera_backend >/dev/null 2>&1 || docker network create camera_backend
 docker pull alexxit/go2rtc:latest
 printf 'GO2RTC_IMAGE=%s\n' "$(docker image inspect alexxit/go2rtc:latest --format '{{index .RepoDigests 0}}')" > deploy/.env
 chmod 600 deploy/.env
