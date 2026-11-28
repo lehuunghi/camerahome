@@ -6,7 +6,7 @@ No public ports on go2rtc or engine. Only CameraHome binds 127.0.0.1:8180. The e
 
 ## Capture
 
-The primary stream is buffered into roughly 5-second TS segments; only segments overlapping motion or baby-cry events plus 8-second pre-roll and 12-second post-roll become archives. Static buffers are removed. Closed event clips are remuxed to MP4, keeping the original HD video codec and encoding only audio to AAC. Split points follow camera keyframes, with event batches capped at about 178 seconds. No AV1 CPU encoding. Disk free-space guard pauses new capture below 2 GiB; pending event footage is not silently erased.
+The primary stream is buffered into roughly 5-second TS segments; only segments overlapping motion or baby-cry events plus 8-second pre-roll and 12-second post-roll become archives. Static buffers are removed. The buffer keeps the original HD video codec and converts only audio to AAC, because Tapo G.711 audio is not reliably preserved in MPEG-TS. Closed event clips are remuxed to MP4 without a second audio/video encoding. Split points follow camera keyframes, with event batches capped at about 178 seconds. No AV1 CPU encoding. Disk free-space guard pauses new capture below 2 GiB; pending event footage is not silently erased.
 
 Baby cry requires two consecutive YAMNet scores >=0.35 and uses the AudioSet baby-cry class, not generic sound volume. Motion uses a 320x180, 3fps substream, background subtraction, noise removal and consecutive-frame confirmation. These thresholds need validation in each room; this is not a safety-critical baby monitor. UI modes remain motion / crying / either. The legacy YAML structure is retained only as a migration format, not as a Frigate runtime dependency.
 

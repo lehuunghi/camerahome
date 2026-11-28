@@ -153,7 +153,7 @@ async def export_segments(camera, rows):
         try:
             proc = await spawn(['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
                 '-f', 'concat', '-safe', '0', '-i', str(playlist), '-map', '0:v:0', '-map', '0:a:0?',
-                '-c:v', 'copy', '-c:a', 'aac', '-b:a', '48k', '-ac', '1', '-movflags', '+faststart',
+                '-c:v', 'copy', '-c:a', 'copy', '-movflags', '+faststart',
                 '-f', 'mp4', str(temporary)])
             try:
                 code = await asyncio.wait_for(proc.wait(), 60)
@@ -180,7 +180,7 @@ async def capture(camera):
     directory.mkdir(parents=True)
     began = time.time()
     (directory/'session.json').write_text(json.dumps({'camera': camera, 'at': began}))
-    proc = await spawn(ffmpeg(camera)+['-map','0:v:0','-map','0:a:0?','-c','copy',
+    proc = await spawn(ffmpeg(camera)+['-map','0:v:0','-map','0:a:0?','-c:v','copy','-c:a','aac','-b:a','48k','-ac','1',
         '-f','segment','-segment_time','5','-segment_format','mpegts','-reset_timestamps','1',
         '-segment_list',str(directory/'segments.csv'),str(directory/'%09d.ts')])
     try:
