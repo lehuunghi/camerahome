@@ -194,10 +194,10 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <label data-camera-connection>Địa chỉ IP <input name="ip" inputmode="decimal"></label>
 <label data-camera-connection>Tên Camera Account <input name="cameraUser" autocomplete="off" placeholder="Để trống để giữ nguyên"></label>
 <label data-camera-connection>Mật khẩu Camera Account <input name="cameraPassword" type="password" autocomplete="new-password"></label>
-<label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label>
-<label>Chất lượng bản ghi <select name="recordingQuality"><option value="hd">HD / độ nét gốc (luồng chính)</option><option value="low">Tiết kiệm (luồng phụ)</option></select></label>
+<label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động hoặc tiếng khóc</option></select></label>
+<label>Chất lượng bản ghi <select name="recordingQuality"><option value="hd">HD / độ nét gốc (luồng chính)</option></select></label>
 <button class="accent" type="submit">Lưu thay đổi</button>
-</form><p class="notice">Tiếng khóc cần camera có micro. Chế độ kết hợp có thể giữ cả đoạn có âm thanh lớn khác. Chọn HD để ghi luồng chính ở độ nét gốc, gồm 1080p nếu camera hỗ trợ. Bản ghi đã nén giữ độ phân giải và được sao lưu nguyên file lên Drive/R2.</p>
+</form><p class="notice">Tiếng khóc cần camera có micro. Chế độ kết hợp kích hoạt khi có chuyển động hoặc mô hình nhận diện tiếng trẻ khóc. Chọn HD để ghi luồng chính ở độ nét gốc, gồm 1080p nếu camera hỗ trợ. Bản ghi giữ độ phân giải và được sao lưu nguyên file lên Drive/R2.</p>
 <div class="tool-group"><button id="settings-reconnect" type="button" hidden>Kết nối lại</button><button id="settings-delete" type="button" hidden>Xóa camera</button></div><p id="settings-result" role="status"></p></section>
 <section class="panel" id="add"><h2>Thêm camera Tapo</h2><p class="notice">Camera cần ở mạng 192.168.88.x và hỗ trợ RTSP. Dùng Camera Account được tạo trong cài đặt nâng cao của app Tapo.</p>
 <form id="camera-form">
@@ -207,7 +207,7 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <label>IP camera <input name="ip" placeholder="192.168.88.9" required inputmode="decimal" maxlength="15"></label>
 <label>Tên Camera Account <input name="username" required maxlength="128" autocomplete="off"></label>
 <label>Mật khẩu Camera Account <input name="password" type="password" required maxlength="128" autocomplete="new-password"></label>
-<label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động và âm thanh</option></select></label><label>Chất lượng bản ghi <select name="recordingQuality"><option value="hd">HD / độ nét gốc (luồng chính)</option><option value="low">Tiết kiệm (luồng phụ)</option></select></label><button class="accent" type="submit">Thêm camera</button>
+<label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động hoặc tiếng khóc</option></select></label><label>Chất lượng bản ghi <select name="recordingQuality"><option value="hd">HD / độ nét gốc (luồng chính)</option></select></label><button class="accent" type="submit">Thêm camera</button>
 </form><p id="camera-result" role="status"></p></section>
 <section class="panel" id="drive"><h2>Google Drive</h2><p id="backup" role="status">Đang kiểm tra…</p>
 <h3>Kết nối nhanh bằng mã rclone</h3>
@@ -218,7 +218,7 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <li>Đăng nhập Google, cấp quyền, rồi sao chép phần JSON từ <code>{</code> đến <code>}</code> ở kết quả. Chỉ dán vào ô bảo mật bên dưới.</li>
 </ol>
 <form id="drive-token-form">
-<label>Thư mục trên Drive <input name="folder" value="Tapo-Frigate" required maxlength="200"></label>
+<label>Thư mục trên Drive <input name="folder" value="CameraHome" required maxlength="200"></label>
 <label>Mã kết nối rclone <input name="token" type="password" required maxlength="32768" autocomplete="off" spellcheck="false" placeholder="Dán JSON từ rclone authorize"></label>
 <button class="accent" type="submit">Kết nối Google Drive</button>
 </form><p id="drive-token-result" role="status"></p>
@@ -226,12 +226,12 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <details><summary>Kết nối nâng cao bằng OAuth riêng</summary>
 <p class="notice">Trong Google Cloud, bật Drive API và tạo OAuth client loại Web application. Thêm URL chuyển hướng: <code id="callback-url"></code>. Nếu ứng dụng đang ở chế độ thử nghiệm, thêm tài khoản Google của bạn vào danh sách người dùng thử.</p>
 <form id="drive-form">
-<label>Thư mục trên Drive <input name="folder" value="Tapo-Frigate" required maxlength="200"></label>
+<label>Thư mục trên Drive <input name="folder" value="CameraHome" required maxlength="200"></label>
 <label>OAuth Client ID <input name="client_id" required autocomplete="off" maxlength="300"></label>
 <label>OAuth Client Secret <input name="client_secret" type="password" required autocomplete="new-password" maxlength="300"></label>
 <button class="accent" type="submit">Kết nối Google Drive</button>
 </form><p id="drive-result" role="status"></p></details></section>
-<section class="panel" id="cloud-panel" hidden><h2>Bật/tắt sao lưu</h2>
+<section class="panel" id="cloud-panel" hidden><h2>Bật/tắt sao lưu</h2><p id="engine-status" role="status"></p>
 <form id="backup-form">
 <label class="check"><input name="backup_enabled" type="checkbox"> Bật sao lưu tự động</label>
 <label class="check"><input name="local_enabled" type="checkbox"> Lưu trên máy chủ</label>
@@ -239,14 +239,14 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <label class="check"><input name="r2_enabled" type="checkbox"> Sao lưu Cloudflare R2 <small id="backup-r2-state"></small></label>
 <button type="submit">Lưu bật/tắt sao lưu</button></form>
 <p id="backup-result" role="status"></p>
-<p class="notice">Công tắc tổng tạm dừng tạo video đã nén và tải lên, giữ lựa chọn từng nơi. Tắt lưu máy chủ: vẫn cần file tạm khi bật Drive/R2; chỉ dọn file mới sau khi xác nhận đủ bản sao. Không xóa video cũ khi tắt. Bộ đệm video gốc Frigate vẫn theo chế độ ghi của camera.</p>
+<p class="notice">Công tắc tổng tạm dừng ghi sự kiện và tải lên, giữ lựa chọn từng nơi. Tắt lưu máy chủ: vẫn cần file tạm khi bật Drive/R2; chỉ dọn file mới sau khi xác nhận đủ bản sao. Không xóa video cũ khi tắt. Bộ đệm ngắn tự dọn; chỉ sự kiện được giữ thành video.</p>
 <h2>Thời gian lưu và kết nối kho</h2>
 <h3>Chính sách giữ bản ghi</h3><form id="cloud-policy-form">
 <label>Số ngày giữ video đã sao lưu trên máy chủ <input name="local_days" type="number" min="0" max="3650" value="0" required></label>
 
 <label>Số ngày giữ video trên Drive <input name="drive_days" type="number" min="0" max="3650" value="0" required></label>
 <button type="submit">Lưu thời gian lưu trữ</button></form>
-<p class="notice">Trên máy chủ: 0 = không tự xóa. Chỉ dọn video đã nén sau khi xác nhận có bản sao đủ dung lượng trên các nguồn đám mây đang bật; nếu bật cả Drive và R2 thì cần đủ hai bản sao. Nên giữ trên đám mây lâu hơn trên máy chủ. Video gốc Frigate vẫn theo chính sách ghi của từng camera.<br>Trên Drive: 0 = không tự xóa. Khi đặt số ngày, video quá hạn trong thư mục bản ghi sẽ bị xóa vĩnh viễn.</p>
+<p class="notice">Trên máy chủ: 0 = không tự xóa. Chỉ dọn video đã nén sau khi xác nhận có bản sao đủ dung lượng trên các nguồn đám mây đang bật; nếu bật cả Drive và R2 thì cần đủ hai bản sao. Nên giữ trên đám mây lâu hơn trên máy chủ. Video HD được giữ nguyên codec gốc để giảm tải CPU.<br>Trên Drive: 0 = không tự xóa. Khi đặt số ngày, video quá hạn trong thư mục bản ghi sẽ bị xóa vĩnh viễn.</p>
 <h3>Cloudflare R2</h3><form id="r2-form">
 <label>Account ID <input name="account_id" maxlength="32" required autocomplete="off"></label>
 <label>Bucket <input name="bucket" maxlength="63" required></label>
@@ -256,7 +256,7 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <label>Số ngày giữ video trên R2 <input name="days" type="number" min="1" max="3650" value="30" required></label>
 
 <button type="submit" class="accent">Kiểm tra và lưu R2</button></form>
-<p class="notice">Cần bucket đã tạo và khóa có quyền đọc, ghi, xóa đối tượng trong bucket. Video quá hạn sẽ bị xóa vĩnh viễn, tính từ lúc ghi hình. Chỉ dọn thư mục bản ghi của ứng dụng; chạy kiểm tra mỗi 5 phút khi máy chủ hoạt động. Khóa được lưu riêng trên máy chủ.</p>
+<p class="notice">Cần bucket đã tạo và khóa có quyền đọc, ghi, xóa đối tượng trong bucket. Video quá hạn sẽ bị xóa vĩnh viễn, tính từ lúc ghi hình. Chỉ dọn thư mục bản ghi của ứng dụng; Hàng đợi nhận video ngay khi hoàn tất đoạn; tác vụ tải lỗi sẽ tự thử lại. Khóa được lưu riêng trên máy chủ.</p>
 <p id="local-retention-status" role="status"></p><p id="cloud-result" role="status"></p><p id="r2-status" role="status"></p></section>
 <section class="panel" id="site-panel" hidden><h2>Tên website</h2>
 <form id="site-form"><label>Tên hiển thị <input name="name" maxlength="60" required placeholder="CameraHome"></label><button type="submit" class="accent">Lưu tên</button></form><p id="site-result" role="status"></p></section>
@@ -384,7 +384,7 @@ async function cameras() {
     }));
     return list;
   } catch {
-    el('connection').textContent = 'Không kết nối được với Frigate.';
+    el('connection').textContent = 'Không kết nối được với dịch vụ camera.';
     el('cameras').replaceChildren();
   }
 }
@@ -627,7 +627,7 @@ async function openSettings(id) {
     form.dataset.originalIp=settings.ip||'';
     el('settings-delete').hidden=!session.admin;
     form.elements.mode.value = settings.mode;
-    form.elements.recordingQuality.value = settings.compact?'low':'hd';
+    form.elements.recordingQuality.value = 'hd';
     el('settings-result').textContent = '';
     button.disabled = false;
   } catch {
@@ -650,7 +650,7 @@ el('settings-form').onsubmit = async event => {
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     if (!response.ok) throw new Error(await response.text());
     if (managing===id) {form.dataset.originalIp=ip.value.trim();cameraUser.value='';cameraPassword.value='';}
-    if (managing === id) el('settings-result').textContent = 'Đã lưu. Frigate sẽ nạp lại cấu hình.';
+    if (managing === id) el('settings-result').textContent = 'Đã lưu. dịch vụ camera sẽ nạp lại cấu hình.';
   } catch(error) {if (managing === id) el('settings-result').textContent = error.message;}
   finally {if (managing === id) button.disabled = false;}
 };
@@ -690,11 +690,11 @@ el('camera-form').onsubmit = async event => {
   event.preventDefault();
   const form = event.currentTarget, button = form.querySelector('button');
   button.disabled = true;
-  el('camera-result').textContent = 'Đang cập nhật Frigate…';
+  el('camera-result').textContent = 'Đang cập nhật dịch vụ camera…';
   try {
     await submit(form,'/api/cameras');
     form.reset();
-    el('camera-result').textContent = 'Đã lưu cấu hình. Frigate đang nạp lại. Hãy kiểm tra trạng thái nhận hình.';
+    el('camera-result').textContent = 'Đã lưu cấu hình. dịch vụ camera đang nạp lại. Hãy kiểm tra trạng thái nhận hình.';
     setTimeout(refresh, 12000);
   } catch(error) {el('camera-result').textContent = error.message;}
   finally {button.disabled = false;}
@@ -998,7 +998,14 @@ accountForm.onsubmit=async event=>{
   } catch(error) {el('account-status').textContent=error.message;}
   finally {button.disabled=false;}
 };
+async function loadEngineStatus(){
+ try{const s=await read('/api/engine');if(s.engine==='camerahome-native'){
+ const pending=(s.queue||[]).filter(x=>['pending','error','uploading'].includes(x.state)).reduce((n,x)=>n+x.count,0);
+ el('engine-status').textContent='Bộ ghi CameraHome độc lập · HD gốc · '+(s.cry_model_ready?'Mô hình tiếng khóc sẵn sàng':'Mô hình tiếng khóc chưa sẵn sàng')+' · '+pending+' tác vụ sao lưu đang chờ';}}
+ catch{el('engine-status').textContent='Chưa đọc được trạng thái bộ ghi.';}
+}
 async function loadCloudSettings(){
+ loadEngineStatus();
  try{
   const state=await read('/api/storage'),policy=el('cloud-policy-form').elements,fields=el('r2-form').elements;
   policy.local_days.value=state.local_days||0;
@@ -1040,7 +1047,7 @@ el('r2-form').onsubmit=async event=>{
  const response=await fetch('/api/storage/r2',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
  if(!response.ok)throw new Error(await response.text());
  form.elements.access_key.value='';form.elements.secret_key.value='';
- el('cloud-result').textContent='Đã lưu và kiểm tra kết nối R2. Sao lưu tự động mỗi 5 phút.';loadCloudSettings();
+ el('cloud-result').textContent='Đã lưu và kiểm tra kết nối R2. Video mới tự đưa vào hàng đợi sao lưu.';loadCloudSettings();
  }catch(error){el('cloud-result').textContent=error.message;}finally{button.disabled=false;}
 };
 function applySiteName(name){name=name||'CameraHome';document.title=name;el('site-brand').textContent=name;}
@@ -1104,3 +1111,4 @@ el('logout').onclick=async()=>{
 window.addEventListener('pageshow',event=>{if(event.persisted) location.reload();});
 initializePage();
 </script></body></html>
+

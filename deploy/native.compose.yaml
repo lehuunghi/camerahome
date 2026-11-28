@@ -1,0 +1,43 @@
+services:
+  go2rtc:
+    image: ${GO2RTC_IMAGE:-alexxit/go2rtc:latest}
+    restart: unless-stopped
+    volumes: ['/opt/camerahome-data/native/go2rtc.yaml:/config/go2rtc.yaml:ro']
+    networks: [camera_backend]
+    logging: {driver: json-file, options: {max-size: 5m, max-file: '2'}}
+  engine:
+    build: {context: '..', dockerfile: engine/Dockerfile}
+    image: camerahome-engine:latest
+    restart: unless-stopped
+    init: true
+    environment: {GO2RTC_URL: 'http://go2rtc:1984', GO2RTC_RTSP: 'rtsp://go2rtc:8554'}
+    volumes:
+      - /opt/frigate/config:/config
+      - /opt/frigate/storage/camerahome-clips:/recordings
+      - /opt/camerahome-data:/app-data
+      - /opt/camerahome-spool:/spool
+      - /opt/camerahome-models:/models:ro
+    networks: [camera_backend]
+    depends_on: [go2rtc]
+    stop_grace_period: 30s
+    logging: {driver: json-file, options: {max-size: 5m, max-file: '2'}}
+  camerahome:
+    image: camerahome-camerahome:latest
+    restart: unless-stopped
+    ports: ['127.0.0.1:8180:8080']
+    environment:
+      FRIGATE_URL: http://engine:5000
+      GO2RTC_URL: http://go2rtc:1984
+      STORAGE_WORKER: engine
+      PUBLIC_ORIGIN: https://camera.nghi.org
+      CAMERA_SUBNET: 192.168.88
+    volumes:
+      - /opt/frigate/storage/camerahome-clips:/recordings
+      - /opt/frigate/backup-status:/backup-status:ro
+      - /opt/frigate/config:/frigate-config:ro
+      - /opt/camerahome-data:/app-data
+      - /opt/camerahome-auth:/nginx-auth
+    networks: [camera_backend]
+    depends_on: [engine]
+networks:
+  camera_backend: {external: true, name: camera_backend}

@@ -163,7 +163,18 @@ fn source_name(r:&Remote)->&'static str{if r.config=="/app-data/drive.conf"{"dri
 async fn catalog(r:&Remote)->Catalog{
  let file=format!("/app-data/cloud-catalog-{}.json",source_name(r));
  let stored=fs::read(&file).await.ok().and_then(|v|serde_json::from_slice::<Catalog>(&v).ok()).unwrap_or_default();
- if stored.target==r.target{stored}else{Catalog{target:r.target.clone(),..Catalog::default()}}
+ let mut stored=if stored.target==r.target{stored}else{Catalog{target:r.target.clone(),..Catalog::default()}};
+ if std::env::var("STORAGE_WORKER").as_deref()==Ok("engine") {
+  let base=std::env::var("FRIGATE_URL").unwrap_or_else(|_|"http://engine:5000".into());
+  if let Ok(response)=reqwest::Client::new().get(format!("{}/api/catalog",base.trim_end_matches('/')))
+   .query(&[("source",source_name(r)),("target",r.target.as_str())]).timeout(Duration::from_secs(5)).send().await {
+   if let Ok(value)=response.json::<Value>().await {
+    if let Some(files)=value["files"].as_object(){for (path,size) in files{if let Some(size)=size.as_u64(){stored.files.insert(path.clone(),size);}}}
+    if let Some(expired)=value["expired"].as_array(){for path in expired.iter().filter_map(Value::as_str){stored.files.remove(path);}}
+   }
+  }
+ }
+ stored
 }
 async fn record_catalog(r:&Remote,entries:Vec<(String,u64)>,day:Option<&str>)->Result<(),Problem>{
  let _guard=CATALOG_LOCK.lock().await;
@@ -506,3 +517,4 @@ pub async fn backup_worker(app:App){
   fs::remove_file(link).await.unwrap();fs::remove_file(path).await.unwrap();
  }
 }
+

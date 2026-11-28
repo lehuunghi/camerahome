@@ -38,6 +38,7 @@ pub fn routes() -> Router<App> {
         .route("/api/ptz/{id}", get(ptz_info).post(ptz_move))
         .route("/api/cameras/{id}/settings", get(camera_settings).post(change_camera_settings).delete(delete_camera))
         .route("/api/drive", get(drive_status).post(start_drive))
+        .route("/api/engine",get(engine_status))
         .route("/api/drive/token", post(import_drive_token))
         .route("/api/clips/cleanup", get(cleanup_preview).post(cleanup_recordings))
         .route("/api/clips/purge", get(purge_status).post(purge_all))
@@ -240,9 +241,9 @@ pub(crate) async fn save_config(app: &App, config: &Value) -> Result<(), Problem
     let payload = serde_yaml::to_string(config).map_err(|_| internal())?;
     let response = app.client.post(format!("{}/api/config/save?save_option=restart", app.frigate))
         .timeout(Duration::from_secs(20)).header(header::CONTENT_TYPE, "text/plain").body(payload).send().await
-        .map_err(|_| problem(StatusCode::BAD_GATEWAY, "Frigate chưa phản hồi. Làm mới để kiểm tra trước khi thử lại."))?;
+        .map_err(|_| problem(StatusCode::BAD_GATEWAY, "Dịch vụ camera chưa phản hồi. Làm mới để kiểm tra trước khi thử lại."))?;
     if !response.status().is_success() || !response.json::<Value>().await.is_ok_and(|body| body["success"].as_bool() == Some(true)) {
-        return Err(problem(StatusCode::BAD_GATEWAY, "Frigate từ chối cấu hình. Camera chưa được xác nhận."));
+        return Err(problem(StatusCode::BAD_GATEWAY, "Dịch vụ camera từ chối cấu hình. Camera chưa được xác nhận."));
     }
     Ok(())
 }
@@ -273,7 +274,7 @@ async fn live(State(app): State<App>, Extension(user): Extension<crate::accounts
         Some("hd") => format!("{id}__1080"),
         _ => return Err(problem(StatusCode::BAD_REQUEST, "Chất lượng không hợp lệ.")),
     };
-    let url = format!("ws://{}/live/mse/api/ws?src={stream}", &app.frigate[7..]);
+    let url = if let Ok(base)=env::var("GO2RTC_URL") {format!("{}/api/ws?src={stream}",base.replacen("http://","ws://",1).trim_end_matches('/'))} else {format!("ws://{}/live/mse/api/ws?src={stream}", &app.frigate[7..])};
     Ok(ws.on_upgrade(move |socket| live_session(socket, url, user, id)))
 }
 
@@ -683,4 +684,11 @@ async fn import_drive_token(State(app):State<App>,Extension(user):Extension<crat
         assert_eq!(drive_folder(" Family/Camera ").unwrap(),"Family/Camera");
         for folder in ["../other","drive:folder","safe/../other","safe\n[other]","safe//other"]{assert!(drive_folder(folder).is_err());}
     }
+}
+
+
+async fn engine_status(State(app):State<App>)->Result<Json<Value>,Problem>{
+ let status=app.client.get(format!("{}/api/stats",app.frigate)).send().await.map_err(|_|internal())?
+ .json::<Value>().await.map_err(|_|internal())?;
+ Ok(Json(status))
 }

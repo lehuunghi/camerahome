@@ -151,7 +151,7 @@ async fn main() {
         oauth: Default::default(),
         status: env::var("STATUS_DIR").unwrap_or_else(|_| "/backup-status".into()).into(),
     };
-    tokio::spawn(cloud::backup_worker(app.clone()));
+    if env::var("STORAGE_WORKER").as_deref()!=Ok("engine") {tokio::spawn(cloud::backup_worker(app.clone()));}
     tokio::spawn(mac::worker(app.clone()));
     let router = Router::new()
         .merge(manage::routes())
@@ -169,3 +169,4 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.expect("listen");
     axum::serve(listener, router).await.expect("serve");
 }
+

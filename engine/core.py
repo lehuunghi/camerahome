@@ -1,0 +1,143 @@
+"""Durable event and copy index. No camera or cloud credentials in this database."""
+import contextlib
+import hashlib
+import json
+import sqlite3
+import time
+from pathlib import Path
+
+
+class Index:
+    def __init__(self, path):
+        self.path = str(path)
+        with self.connect() as db:
+            db.executescript('''
+              PRAGMA journal_mode=WAL;
+              CREATE TABLE IF NOT EXISTS events(camera TEXT, at REAL, kind TEXT, score REAL);
+              CREATE INDEX IF NOT EXISTS event_time ON events(camera,at);
+              CREATE TABLE IF NOT EXISTS clips(path TEXT PRIMARY KEY, camera TEXT, at REAL,
+                 duration REAL, size INTEGER, sha256 TEXT, deleted_local INTEGER DEFAULT 0);
+              CREATE TABLE IF NOT EXISTS copies(path TEXT, source TEXT, target TEXT,
+                 state TEXT DEFAULT 'pending', attempts INTEGER DEFAULT 0,
+                 retry REAL DEFAULT 0, confirmed REAL, error TEXT DEFAULT '',
+                 PRIMARY KEY(path,source,target));
+              CREATE INDEX IF NOT EXISTS copy_pending ON copies(source,target,state,retry);
+              CREATE TABLE IF NOT EXISTS segments(path TEXT PRIMARY KEY, camera TEXT,
+                 start REAL, end REAL, state TEXT DEFAULT 'buffer', clip TEXT);
+            ''')
+            db.execute("UPDATE copies SET state='pending' WHERE state='uploading'")
+
+    @contextlib.contextmanager
+    def connect(self):
+        db = sqlite3.connect(self.path, timeout=20)
+        db.row_factory = sqlite3.Row
+        try:
+            yield db
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def event(self, camera, at, kind, score):
+        with self.connect() as db:
+            db.execute('INSERT INTO events VALUES(?,?,?,?)', (camera, at, kind, score))
+
+    def active(self, camera, start, end, pre=8, post=12):
+        with self.connect() as db:
+            return db.execute('SELECT 1 FROM events WHERE camera=? AND at>=? AND at<=? LIMIT 1',
+                              (camera, start-post, end+pre)).fetchone() is not None
+
+    def register(self, file, root, camera, at, duration):
+        relative = file.relative_to(root).as_posix()
+        digest = hashlib.sha256()
+        with file.open('rb') as source:
+            for block in iter(lambda: source.read(1024*1024), b''):
+                digest.update(block)
+        with self.connect() as db:
+            db.execute('INSERT OR IGNORE INTO clips(path,camera,at,duration,size,sha256) VALUES(?,?,?,?,?,?)',
+                       (relative, camera, at, duration, file.stat().st_size, digest.hexdigest()))
+        return relative
+
+    def enqueue(self, source, target, cutoff=0):
+        with self.connect() as db:
+            db.execute('''INSERT OR IGNORE INTO copies(path,source,target)
+              SELECT path,?,? FROM clips WHERE at>=?''', (source, target, cutoff))
+
+    def next_copy(self, source, target):
+        with self.connect() as db:
+            row = db.execute('''SELECT c.*,q.attempts FROM copies q JOIN clips c USING(path)
+              WHERE q.source=? AND q.target=? AND q.state IN ('pending','error') AND q.retry<=?
+              ORDER BY c.at LIMIT 1''', (source, target, time.time())).fetchone()
+            if row:
+                db.execute("UPDATE copies SET state='uploading' WHERE path=? AND source=? AND target=?",
+                           (row['path'], source, target))
+            return dict(row) if row else None
+
+    def complete(self, path, source, target):
+        with self.connect() as db:
+            db.execute("UPDATE copies SET state='done',confirmed=?,error='' WHERE path=? AND source=? AND target=?",
+                       (time.time(), path, source, target))
+
+    def fail(self, path, source, target, attempts, message):
+        delay = min(3600, 15 * 2**min(attempts, 8))
+        with self.connect() as db:
+            db.execute("UPDATE copies SET state='error',attempts=?,retry=?,error=? WHERE path=? AND source=? AND target=?",
+                       (attempts+1, time.time()+delay, message, path, source, target))
+
+    def confirmed(self, path, targets):
+        if not targets:
+            return False
+        with self.connect() as db:
+            return all(db.execute("SELECT 1 FROM copies WHERE path=? AND source=? AND target=? AND state='done'",
+                                  (path, source, target)).fetchone() for source, target in targets)
+
+    def catalog(self, source, target):
+        with self.connect() as db:
+            return {r['path']: r['size'] for r in db.execute('''SELECT c.path,c.size FROM clips c
+              JOIN copies q USING(path) WHERE q.source=? AND q.target=? AND q.state='done' ''', (source, target))}
+
+
+def destination_targets(data):
+    """Return enabled destinations, never interpreting a missing config as ready."""
+    p = read_json(data/'cloud-policy.json', {})
+    if not p.get('backup_enabled', True):
+        return p, {}
+    targets = {}
+    if p.get('drive_enabled', True) and (data/'drive.conf').is_file() and (data/'drive-folder').is_file():
+        folder = (data/'drive-folder').read_text().strip()
+        targets['drive'] = {'target': f'drive:{folder}/recordings', 'config': str(data/'drive.conf'),
+                            'days': p.get('drive_days', 0), 'env': {}}
+    r2 = read_json(data/'r2.json', {})
+    if r2 and p.get('r2_enabled', r2.get('enabled', False)):
+        targets['r2'] = {'target': f"r2:{r2['bucket']}/{r2['prefix']}/recordings", 'config': '/dev/null',
+                         'days': r2['days'], 'env': {
+            'RCLONE_CONFIG_R2_TYPE': 's3', 'RCLONE_CONFIG_R2_PROVIDER': 'Cloudflare',
+            'RCLONE_CONFIG_R2_ACCESS_KEY_ID': r2['access_key'],
+            'RCLONE_CONFIG_R2_SECRET_ACCESS_KEY': r2['secret_key'],
+            'RCLONE_CONFIG_R2_ENDPOINT': f"https://{r2['account_id']}.r2.cloudflarestorage.com",
+            'RCLONE_CONFIG_R2_REGION': 'auto', 'RCLONE_CONFIG_R2_NO_CHECK_BUCKET': 'true'}}
+    return p, targets
+
+
+def read_json(path, default):
+    try:
+        return json.loads(path.read_text())
+    except FileNotFoundError:
+        return default
+
+
+def selected_mode(camera):
+    motion = camera.get('record', {}).get('motion', {}).get('days', 0) > 0
+    cry = camera.get('audio', {}).get('enabled', False)
+    return motion, cry
+
+
+def eligible_local_delete(row, policy, targets, index, modified):
+    if not policy.get('backup_enabled', True) or not index.confirmed(row['path'], targets):
+        return False
+    staged = (not policy.get('local_enabled', True) and policy.get('local_off_since') is not None
+              and modified * 1000 >= policy['local_off_since'])
+    days = policy.get('local_days', 0)
+    return staged or (days > 0 and row['at'] < time.time()-days*86400)

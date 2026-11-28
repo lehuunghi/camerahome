@@ -1,0 +1,6 @@
+aiohttp==3.11.18
+numpy==1.26.4
+opencv-python-headless==4.11.0.86
+PyYAML==6.0.2
+tflite-runtime==2.14.0
+onvif-zeep==0.2.12

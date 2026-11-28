@@ -50,12 +50,29 @@ def main():
     REQUEST.unlink()
     status(job,"running","Đang dừng ghi hình và xóa toàn bộ video trên máy chủ.")
     timer_active=False;stopped=False;removed=None;error=None
+    native=(DATA/"native-enabled").exists()
     try:
         timer_active=subprocess.run(["systemctl","is-active","--quiet","camerahome-clips.timer"]).returncode==0
         run("systemctl","stop","camerahome-clips.timer","camerahome-clips.service")
-        run("docker","stop","--time","30","frigate");stopped=True
+        if native:
+            run("docker","compose","-p","camerahome","-f","/opt/camerahome/deploy/native.compose.yaml","stop","engine")
+        else:
+            run("docker","stop","--time","30","frigate")
+        stopped=True
         removed=clear_video_storage(STORAGE)
-        clear_index(Path("/opt/frigate/config/frigate.db"))
+        if native:
+            spool=Path("/opt/camerahome-spool")
+            if spool.is_symlink(): raise ValueError("Unexpected spool")
+            for child in spool.iterdir():
+                if child.is_dir() and not child.is_symlink(): shutil.rmtree(child)
+                else: child.unlink()
+            with sqlite3.connect(DATA/"native-index.sqlite",timeout=30) as db:
+                db.execute("DELETE FROM segments")
+                db.execute("DELETE FROM events")
+                db.execute("UPDATE clips SET deleted_local=1")
+                db.execute("UPDATE copies SET state='cancelled' WHERE state IN ('pending','error','uploading')")
+        else:
+            clear_index(Path("/opt/frigate/config/frigate.db"))
         progress=DATA/"clip-progress.json"
         temp=progress.with_suffix(".new");temp.write_text("{}");os.chmod(temp,0o600);os.replace(temp,progress)
     except Exception as exc:
@@ -64,7 +81,10 @@ def main():
         if stopped:
             try:
                 # Recreating clears the old container's video cache as well.
-                run("docker","compose","-f","/opt/frigate/compose.yaml","up","-d","--force-recreate","--no-deps","--pull","never","frigate")
+                if native:
+                    run("docker","compose","-p","camerahome","-f","/opt/camerahome/deploy/native.compose.yaml","up","-d","--no-build","engine")
+                else:
+                    run("docker","compose","-f","/opt/frigate/compose.yaml","up","-d","--force-recreate","--no-deps","--pull","never","frigate")
             except Exception as exc: error="Restart "+type(exc).__name__
         if timer_active:
             try: run("systemctl","start","camerahome-clips.timer")
@@ -74,3 +94,4 @@ def main():
         raise RuntimeError(error)
     status(job,"done","Đã xóa toàn bộ video cũ trên máy chủ, kiểm tra còn 0 video trước khi bật ghi lại. Camera đã được bật ghi tiếp.",removed=removed,remaining_at_cleanup=0)
 if __name__=="__main__": main()
+
