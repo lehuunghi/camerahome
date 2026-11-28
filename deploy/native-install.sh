@@ -7,14 +7,15 @@ chmod 700 "$backup_dir" /opt/camerahome-models /opt/camerahome-spool
 cp /opt/frigate/config/config.yml "$backup_dir/config.yml"
 cp /opt/camerahome/compose.yaml "$backup_dir/compose.yaml"
 if [ -f /opt/camerahome-data/cloud-policy.json ]; then cp /opt/camerahome-data/cloud-policy.json "$backup_dir/cloud-policy.json"; fi
-if [ ! -s /opt/camerahome-models/yamnet.tflite ]; then
-  model_container=$(docker create ghcr.io/blakeblackshear/frigate:stable)
-  docker cp "$model_container:/cpu_audio_model.tflite" /opt/camerahome-models/yamnet.tflite
-  docker rm "$model_container"
-fi
 python3 - <<'PY'
 from pathlib import Path
 import urllib.request
+model=Path('/opt/camerahome-models/yamnet.tflite')
+if not model.exists():
+    request=urllib.request.Request('https://tfhub.dev/google/lite-model/yamnet/tflite/1?lite-format=tflite',headers={'User-Agent':'CameraHome/1.0'})
+    with urllib.request.urlopen(request,timeout=90) as r: raw=r.read()
+    if raw[4:8]!=b'TFL3': raise ValueError('invalid YAMNet download')
+    model.write_bytes(raw)
 path=Path('/opt/camerahome-models/yamnet_class_map.csv')
 if not path.exists():
     with urllib.request.urlopen('https://raw.githubusercontent.com/tensorflow/models/master/research/audioset/yamnet/yamnet_class_map.csv', timeout=30) as r: raw=r.read()

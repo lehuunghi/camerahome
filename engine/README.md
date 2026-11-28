@@ -18,7 +18,7 @@ Retention never removes an unconfirmed local original. Local off stages are hidd
 
 ## Migration
 
-Build and test the Rust web image first. Run `bash deploy/native-install.sh` on the existing host. It saves host-only migration backups and pins the pulled go2rtc digest in ignored deploy/.env. It reuses the already-installed YAMNet model from the cached upstream image; no Frigate service is started. Original archives and Frigate database are preserved. Existing backup switches are preserved. Configure R2 and Google Drive in the authenticated administration page before enabling those destinations.
+Build and test the Rust web image first. Run `bash deploy/native-install.sh` on the existing host. It saves host-only migration backups and pins the pulled go2rtc digest in ignored deploy/.env. It downloads the official Google YAMNet TFLite model when no local model is present; no Frigate service is started. Original archives and Frigate database are preserved. Existing backup switches are preserved. Configure R2 and Google Drive in the authenticated administration page before enabling those destinations.
 
 The old clip timer is disabled. Existing per-camera cleanup and confirmed global purge remain available. The native global purge stops the engine before deleting local recordings and spool, cancels unfinished local backup jobs, and preserves confirmed cloud-copy indexes.
 
