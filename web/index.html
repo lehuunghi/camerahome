@@ -1029,7 +1029,7 @@ el('backup-form').onsubmit=async event=>{
   const body={};for(const key of ['backup_enabled','local_enabled','drive_enabled','r2_enabled'])body[key]=form.elements[key].checked;
   const response=await fetch('/api/storage/backup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!response.ok)throw new Error(await response.text());
-  el('backup-result').textContent='Đã lưu công tắc sao lưu. Video cũ được giữ nguyên.';
+  el('backup-result').textContent='Đã lưu công tắc sao lưu. Chỉ dọn file tạm sau khi kho lưu trữ xác nhận.';
   await loadCloudSettings();
  }catch(error){el('backup-result').textContent=error.message;}finally{button.disabled=false;}
 };
