@@ -63,7 +63,9 @@ class NativeMediaTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(service.capture('test'),10)
         listing=next(service.SPOOL.glob('test/*/segments.csv'))
         row=next(csv.reader(listing.open()))
-        segments=[{'path':row[0],'start':1795860000.,'end':1795860000.+float(row[2])-float(row[1])}]
+        segment=Path(row[0])
+        if not segment.is_absolute():segment=listing.parent/segment
+        segments=[{'path':str(segment),'start':1795860000.,'end':1795860000.+float(row[2])-float(row[1])}]
         await service.export_segments('test',segments)
         output=next(service.ROOT.glob('*/*/*/*.mp4'))
         info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(output)]))
