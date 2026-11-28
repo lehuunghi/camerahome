@@ -336,6 +336,7 @@ const iconPaths={
  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
  settings:'<path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>'
 };
+iconPaths['⚙']=iconPaths.settings;iconPaths['⏱']=iconPaths.clock;iconPaths.download='<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>';
 function makeIcon(glyph){
  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
  for(const [key,value] of Object.entries({viewBox:'0 0 24 24',width:'20',height:'20',fill:'none',stroke:'currentColor','stroke-width':'1.7','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true',focusable:'false'}))svg.setAttribute(key,value);
@@ -345,7 +346,7 @@ function setIcon(button,glyph,label){
  button.replaceChildren(makeIcon(glyph));button.classList.add('icon-button');button.setAttribute('aria-label',label);button.title=label;
 }
 for(const link of document.querySelectorAll('nav [data-view]'))link.prepend(makeIcon(({live:'camera',recordings:'clock',admin:'settings'})[link.dataset.view]));
-document.querySelector('.brand-icon').replaceChildren(makeIcon('camera'));
+document.querySelector('.brand-icon').replaceChildren(makeIcon('camera'));el('download-clip').replaceChildren(makeIcon('download'));
 const buttonIcons={
   refresh:['↻','Làm mới'], logout:['⇥','Đăng xuất'], 'live-reconnect':['↻','Kết nối lại'], 'settings-reconnect':['↻','Kết nối lại'], 'settings-delete':['⌫','Xóa camera'], 'stop-live':['×','Đóng luồng'], 'live-sound':['◖×','Bật tiếng live'],
   'live-fullscreen':['⛶','Toàn màn hình'],
