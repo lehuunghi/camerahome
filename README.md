@@ -118,11 +118,9 @@ Sao lưu tự chạy trong ứng dụng khoảng mỗi 5 phút. File cần hoàn
 
 ### Drive
 
-Quản trị hỗ trợ OAuth riêng và nhập mã rclone.
+Quản trị chỉ hỗ trợ kết nối bằng OAuth riêng. Không cần cài rclone trên máy người dùng.
 
 - OAuth riêng: bật Drive API, tạo Web application client và thêm `PUBLIC_ORIGIN/drive/callback` làm redirect URI, rồi kết nối trên website.
-- Nhập mã: chạy `rclone authorize "drive"` trên máy có trình duyệt, dán JSON vào ô bảo mật trên website. Không gửi token vào chat.
-- Kết nối nhanh mặc định dùng client OAuth của rclone. Theo [tài liệu rclone](https://rclone.org/drive/#making-your-own-client-id), client dùng chung đang được ngừng trong năm 2026; dùng OAuth riêng cho triển khai lâu dài.
 - Bản sao nằm dưới `<thư mục đã chọn>/recordings/YYYY-MM-DD/HH/<camera>/MM.SS.mp4`.
 
 ### R2

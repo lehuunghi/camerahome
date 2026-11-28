@@ -52,7 +52,7 @@ fn transfer_error(stderr:&[u8])->Problem {
  let text=if message.contains("failed to load filters")||message.contains("unknown flag") {
   "Lệnh sao lưu không tương thích với phiên bản rclone."
  }else if message.contains("invalid_grant")||message.contains("invalid_client")||message.contains("unauthorized_client"){
-  "Quyền Google Drive đã hết hiệu lực. Kết nối lại bằng mã rclone mới."
+  "Quyền Google Drive đã hết hiệu lực. Kết nối lại bằng OAuth riêng trong mục Google Drive."
  }else if message.contains("ratelimitexceeded")||message.contains("rate_limit_exceeded")||message.contains("rate limit"){
   "Google Drive đang giới hạn lượt gọi API. Hệ thống sẽ chờ và tự thử lại."
  }else if message.contains("storagequotaexceeded")||message.contains("storage quota"){

@@ -236,27 +236,15 @@ body{font-size:15px}.bar,.notice{font-size:13px;color:#626262}form label{font-si
 <label>Điều kiện ghi <select name="mode"><option value="motion">Chuyển động</option><option value="crying">Tiếng khóc</option><option value="both">Chuyển động hoặc tiếng khóc</option></select></label><label>Chất lượng bản ghi <select name="recordingQuality"><option value="hd">HD / độ nét gốc (luồng chính)</option></select></label><button class="accent" type="submit">Thêm camera</button>
 </form><p id="camera-result" role="status"></p></section>
 <section class="panel" id="drive"><h2>Google Drive</h2><p id="backup" role="status">Đang kiểm tra…</p>
-<h3>Kết nối nhanh bằng mã rclone</h3>
-<ol class="drive-steps">
-<li>Tải và mở <a href="https://rclone.org/downloads/" target="_blank" rel="noopener noreferrer">rclone trên máy tính</a>.</li>
-<li>Chạy <code>rclone authorize "drive"</code> trong Terminal hoặc PowerShell. Với bản Windows giải nén, dùng <code>.&#92;rclone.exe authorize "drive"</code>.
-<button type="button" class="icon-button" id="copy-drive-command" title="Sao chép lệnh" aria-label="Sao chép lệnh">⧉</button></li>
-<li>Đăng nhập Google, cấp quyền, rồi sao chép phần JSON từ <code>{</code> đến <code>}</code> ở kết quả. Chỉ dán vào ô bảo mật bên dưới.</li>
-</ol>
-<form id="drive-token-form">
-<label>Thư mục trên Drive <input name="folder" value="CameraHome" required maxlength="200"></label>
-<label>Mã kết nối rclone <input name="token" type="password" required maxlength="32768" autocomplete="off" spellcheck="false" placeholder="Dán JSON từ rclone authorize"></label>
-<button class="accent" type="submit">Kết nối Google Drive</button>
-</form><p id="drive-token-result" role="status"></p>
-<p class="notice">Mã được lưu riêng trên máy chủ và dùng để tự làm mới kết nối. Không gửi mã vào chat. Nếu không xác thực được, dùng cùng phiên bản rclone với máy chủ.</p>
-<details><summary>Kết nối nâng cao bằng OAuth riêng</summary>
+<h3>Kết nối bằng OAuth riêng</h3>
+<p class="notice">Kết nối trực tiếp với Google bằng ứng dụng OAuth của bạn. Không cần cài phần mềm hay nhập mã kết nối trên máy tính.</p>
 <p class="notice">Trong Google Cloud, bật Drive API và tạo OAuth client loại Web application. Thêm URL chuyển hướng: <code id="callback-url"></code>. Nếu ứng dụng đang ở chế độ thử nghiệm, thêm tài khoản Google của bạn vào danh sách người dùng thử.</p>
 <form id="drive-form">
 <label>Thư mục trên Drive <input name="folder" value="CameraHome" required maxlength="200"></label>
 <label>OAuth Client ID <input name="client_id" required autocomplete="off" maxlength="300"></label>
 <label>OAuth Client Secret <input name="client_secret" type="password" required autocomplete="new-password" maxlength="300"></label>
 <button class="accent" type="submit">Kết nối Google Drive</button>
-</form><p id="drive-result" role="status"></p></details></section>
+</form><p id="drive-result" role="status"></p></section>
 <section class="panel" id="retention-panel" hidden>
 <div class="section-heading"><span class="eyebrow">LƯU TRỮ</span><h2>Thời gian giữ video</h2><p class="notice">Đặt riêng cho từng nơi. Thay đổi ở đây không đổi công tắc sao lưu.</p></div>
 <form id="retention-form">
@@ -735,7 +723,7 @@ async function backup() {
     const result = await read('/api/drive');
     const [message, timestamp] = (result.last || '').split('|');
     const last = timestamp ? message + ' · ' + new Date(Number(timestamp)*1000).toLocaleString('vi-VN') : message;
-    el('backup').textContent = result.folder ? 'Thư mục ' + result.folder + ' · ' + last : 'Chưa kết nối Google Drive.';
+    el('backup').textContent = result.folder ? (result.custom_oauth ? 'OAuth riêng · ' : 'Cần kết nối OAuth riêng · ') + 'Thư mục ' + result.folder + ' · ' + last : 'Chưa kết nối Google Drive.';
   } catch {el('backup').textContent = 'Không đọc được trạng thái sao lưu.';}
 }
 async function submit(form, endpoint) {
@@ -758,20 +746,6 @@ el('camera-form').onsubmit = async event => {
     setTimeout(refresh, 12000);
   } catch(error) {el('camera-result').textContent = error.message;}
   finally {button.disabled = false;}
-};
-el('copy-drive-command').onclick=async()=>{
- try{await navigator.clipboard.writeText('rclone authorize "drive"');el('drive-token-result').textContent='Đã sao chép lệnh.';}
- catch{el('drive-token-result').textContent='Hãy sao chép lệnh hiển thị phía trên.';}
-};
-el('drive-token-form').onsubmit=async event=>{
- event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
- el('drive-token-result').textContent='Đang xác thực và kiểm tra thư mục Drive…';
- try{
-  await submit(form,'/api/drive/token');form.elements.token.value='';
-  el('drive-token-result').textContent='Đã kết nối Google Drive bằng mã rclone. Có thể chọn Google Drive trong mục Nguồn xem lại.';
-  backup();loadCloudSettings();
- }catch(error){el('drive-token-result').textContent=error.message;}
- finally{button.disabled=false;}
 };
 el('callback-url').textContent = location.origin + '/drive/callback';
 const driveResult = new URLSearchParams(location.search).get('drive');

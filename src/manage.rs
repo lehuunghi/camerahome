@@ -39,7 +39,6 @@ pub fn routes() -> Router<App> {
         .route("/api/cameras/{id}/settings", get(camera_settings).post(change_camera_settings).delete(delete_camera))
         .route("/api/drive", get(drive_status).post(start_drive))
         .route("/api/engine",get(engine_status))
-        .route("/api/drive/token", post(import_drive_token))
         .route("/api/clips/cleanup", get(cleanup_preview).post(cleanup_recordings))
         .route("/api/clips/purge", get(purge_status).post(purge_all))
         .route("/drive/callback", get(finish_drive))
@@ -472,7 +471,10 @@ struct DriveInput {
 async fn drive_status() -> Json<Value> {
     let folder = fs::read_to_string(DRIVE_FOLDER).await.ok();
     let last = fs::read_to_string(DRIVE_STATUS).await.ok();
-    Json(json!({"folder":folder,"last":last}))
+    let config = fs::read_to_string(DRIVE_CONFIG).await.unwrap_or_default();
+    let custom_oauth = config.lines().any(|line| line.trim().starts_with("client_id = ") && line.trim().ends_with(".apps.googleusercontent.com"))
+        && config.lines().any(|line| line.trim().strip_prefix("client_secret = ").is_some_and(|value| !value.trim().is_empty()));
+    Json(json!({"folder":folder,"last":last,"custom_oauth":custom_oauth}))
 }
 
 async fn write_private(path: &str, value: &str) -> std::io::Result<()> {
@@ -619,73 +621,6 @@ async fn purge_all(State(app):State<App>,Extension(user):Extension<crate::accoun
     }
     Ok((StatusCode::ACCEPTED,Json(status)))
 }
-
-#[derive(Deserialize)]
-struct DriveTokenInput {folder:String,token:String}
-fn drive_token(raw:&str)->Result<Value,Problem>{
-    if raw.len()>32768 {return Err(problem(StatusCode::BAD_REQUEST,"Mã kết nối quá dài."));}
-    let input:Value=serde_json::from_str(raw.trim()).map_err(|_|problem(StatusCode::BAD_REQUEST,"Dán nguyên phần JSON của mã rclone, bắt đầu bằng { và kết thúc bằng }."))?;
-    let credential=|key:&str|input[key].as_str().filter(|v|!v.is_empty()&&v.len()<=16384&&!v.chars().any(char::is_control)).map(str::to_owned);
-    let access=credential("access_token").ok_or_else(||problem(StatusCode::BAD_REQUEST,"Mã kết nối thiếu access_token."))?;
-    let refresh=credential("refresh_token").ok_or_else(||problem(StatusCode::BAD_REQUEST,"Mã kết nối thiếu refresh_token. Hãy chạy lại rclone authorize."))?;
-    let expiry=input["expiry"].as_str().filter(|v|chrono::DateTime::parse_from_rfc3339(v).is_ok()).ok_or_else(||problem(StatusCode::BAD_REQUEST,"Mã kết nối thiếu thời hạn hợp lệ."))?;
-    if input["token_type"].as_str().is_some_and(|v|!v.eq_ignore_ascii_case("Bearer")) {return Err(problem(StatusCode::BAD_REQUEST,"Loại mã kết nối không hợp lệ."));}
-    Ok(json!({"access_token":access,"refresh_token":refresh,"token_type":"Bearer","expiry":expiry}))
-}
-fn drive_folder(input:&str)->Result<String,Problem>{
-    let folder=input.trim().trim_matches('/');
-    if folder.is_empty()||folder.len()>200||folder.split('/').any(|p|p.is_empty()||matches!(p,"."|".."))
-        ||folder.chars().any(|c|c.is_control()||c==':'||c==char::from(92)){
-        return Err(problem(StatusCode::BAD_REQUEST,"Tên thư mục trên Drive không hợp lệ."));
-    }
-    Ok(folder.to_owned())
-}
-async fn import_drive_token(State(app):State<App>,Extension(user):Extension<crate::accounts::Principal>,headers:HeaderMap,Json(input):Json<DriveTokenInput>)->Result<StatusCode,Problem>{
-    require_origin(&headers)?;
-    if !user.admin {return Err(problem(StatusCode::FORBIDDEN,"Chỉ admin được kết nối Google Drive."));}
-    let folder=drive_folder(&input.folder)?;
-    let token=drive_token(&input.token)?;
-    let _guard=app.drive_lock.lock().await;
-    let pending="/app-data/drive-import.conf";
-    // No custom client: rclone refreshes using its built-in OAuth client.
-    write_private(pending,&format!("[drive]\ntype = drive\nscope = drive\ntoken = {token}\n")).await.map_err(|_|internal())?;
-    let destination=format!("drive:{folder}");
-    for operation in ["mkdir","lsf"] {
-        let mut command=Command::new("rclone");
-        command.args(["--config",pending,operation,&destination,"--contimeout","8s","--timeout","15s","--retries","1","--low-level-retries","1"]);
-        if operation=="lsf"{command.args(["--max-depth","1"]);}
-        let result=command.kill_on_drop(true).output();
-        if !matches!(time::timeout(Duration::from_secs(30),result).await,Ok(Ok(output)) if output.status.success()){
-            let _=fs::remove_file(pending).await;
-            return Err(problem(StatusCode::BAD_GATEWAY,"Không xác thực được mã hoặc quyền thư mục Drive. Chạy lại rclone authorize và dán mã mới; nếu vẫn lỗi, dùng cùng phiên bản rclone với máy chủ."));
-        }
-    }
-    let previous=fs::read(DRIVE_CONFIG).await.ok();
-    fs::rename(pending,DRIVE_CONFIG).await.map_err(|_|internal())?;
-    if write_private(DRIVE_FOLDER,&folder).await.is_err(){
-        if let Some(previous)=previous{let _=write_private(DRIVE_CONFIG,&String::from_utf8_lossy(&previous)).await;}
-        else{let _=fs::remove_file(DRIVE_CONFIG).await;}
-        return Err(internal());
-    }
-    let _=write_private(DRIVE_STATUS,"Đã kết nối bằng mã rclone. Đang chờ sao lưu.").await;
-    Ok(StatusCode::NO_CONTENT)
-}
-#[cfg(test)]mod drive_import_tests{
-    use super::*;
-    #[test]fn token_requires_refresh_and_keeps_only_oauth_fields(){
-        let raw=r#"{"access_token":"test-access","refresh_token":"test-refresh","token_type":"Bearer","expiry":"2026-11-22T07:00:00Z","client_secret":"ignored"}"#;
-        let token=drive_token(raw).unwrap();
-        assert!(token.get("client_secret").is_none());
-        assert_eq!(token["token_type"],"Bearer");
-        assert!(drive_token(r#"{"access_token":"test","expiry":"2026-11-22T07:00:00Z"}"#).is_err());
-        assert!(drive_token("not JSON").is_err());
-    }
-    #[test]fn restricts_drive_folder(){
-        assert_eq!(drive_folder(" Family/Camera ").unwrap(),"Family/Camera");
-        for folder in ["../other","drive:folder","safe/../other","safe\n[other]","safe//other"]{assert!(drive_folder(folder).is_err());}
-    }
-}
-
 
 async fn engine_status(State(app):State<App>)->Result<Json<Value>,Problem>{
  let status=app.client.get(format!("{}/api/stats",app.frigate)).send().await.map_err(|_|internal())?
