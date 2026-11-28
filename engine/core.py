@@ -65,11 +65,13 @@ class Index:
             db.execute('''INSERT OR IGNORE INTO copies(path,source,target)
               SELECT path,?,? FROM clips WHERE at>=?''', (source, target, cutoff))
 
-    def next_copy(self, source, target):
+    def next_copy(self, source, target, r2_first=None):
         with self.connect() as db:
-            row = db.execute('''SELECT c.*,q.attempts FROM copies q JOIN clips c USING(path)
-              WHERE q.source=? AND q.target=? AND q.state IN ('pending','error') AND q.retry<=?
-              ORDER BY c.at LIMIT 1''', (source, target, time.time())).fetchone()
+            gate=" AND EXISTS (SELECT 1 FROM copies r WHERE r.path=q.path AND r.source='r2' AND r.target=? AND r.state='done')" if r2_first else ""
+            params=[source,target,time.time()]+([r2_first] if r2_first else [])
+            row = db.execute("""SELECT c.*,q.attempts FROM copies q JOIN clips c USING(path)
+              WHERE q.source=? AND q.target=? AND q.state IN ('pending','error') AND q.retry<=?"""+gate+
+              " ORDER BY c.at LIMIT 1",params).fetchone()
             if row:
                 db.execute("UPDATE copies SET state='uploading' WHERE path=? AND source=? AND target=?",
                            (row['path'], source, target))
@@ -135,9 +137,28 @@ def selected_mode(camera):
 
 
 def eligible_local_delete(row, policy, targets, index, modified):
-    if not policy.get('backup_enabled', True) or not index.confirmed(row['path'], targets):
+    if not policy.get('backup_enabled', True):
+        return False
+    r2=[target for target in targets if target[0]=='r2']
+    if not policy.get('local_enabled', True) and r2:
+        return index.confirmed(row['path'],r2)
+    if not index.confirmed(row['path'],targets):
         return False
     staged = (not policy.get('local_enabled', True) and policy.get('local_off_since') is not None
               and modified * 1000 >= policy['local_off_since'])
     days = policy.get('local_days', 0)
     return staged or (days > 0 and row['at'] < time.time()-days*86400)
+
+
+def remove_local_after_r2(index, row, root, policy, targets):
+    r2=targets.get('r2')
+    if (not policy.get('backup_enabled',True) or policy.get('local_enabled',True)
+            or not r2 or not index.confirmed(row['path'],[('r2',r2['target'])])):
+        return False
+    file=root/row['path']
+    if file.is_symlink() or not file.is_file() or file.stat().st_size!=row['size']:
+        return False
+    file.unlink()
+    with index.connect() as db:
+        db.execute('UPDATE clips SET deleted_local=1 WHERE path=?',(row['path'],))
+    return True

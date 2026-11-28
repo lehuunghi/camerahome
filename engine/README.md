@@ -12,9 +12,9 @@ Baby cry requires two consecutive YAMNet scores >=0.35 and uses the AudioSet bab
 
 ## Backup
 
-Files are indexed only after atomic MP4 finalization. Each destination has its own durable state, retry time, target identity and verification. Two workers run independently; R2 starts first and becomes the primary playback source when enabled. Drive uses the local file if available, otherwise downloads a verified R2 original through the engine. R2-to-Drive is not a server-side copy. Upload checks size and MD5 if available; local and recovered originals are verified with SHA256. Never use S3 multipart ETags as MD5.
+Files are indexed only after atomic MP4 finalization. Each destination has its own durable state, retry time, target identity and verification. R2 receives each finalized clip immediately (queue polling <=3 seconds). When local storage is off, a verified R2 upload immediately releases its local file without waiting for Drive. Drive waits for the R2 confirmation and downloads the verified original from R2 through the engine. If R2 is not enabled, Drive can upload the local original directly. R2-to-Drive is not a server-side copy. Upload checks size and MD5 if available; local and recovered originals are verified with SHA256. Never use S3 multipart ETags as MD5.
 
-Retention never removes an unconfirmed local original. Local off stages are hidden from local playback and removed only after all active cloud copies confirm. R2 expiry waits for the active Drive copy. Offline/full/expired credentials preserve pending clips. Switches take effect during uploads within roughly a second. Admin sees safe queue counts and model health. Legacy cloud catalogs remain readable.
+Retention never removes an unconfirmed local original. Local off stages are hidden from local playback and removed immediately after R2 confirms; the retention sweep also removes previously confirmed R2 originals. If only Drive is enabled, its confirmation is required. R2 retains the original until the enabled Drive backup succeeds, including across local deletion and restarts. R2 expiry waits for the active Drive copy. Offline/full/expired credentials preserve pending clips. Switches take effect during uploads within roughly a second. Admin sees safe queue counts and model health. Legacy cloud catalogs remain readable.
 
 ## Migration
 

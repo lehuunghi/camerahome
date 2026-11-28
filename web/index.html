@@ -239,14 +239,14 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <label class="check"><input name="r2_enabled" type="checkbox"> Sao lưu Cloudflare R2 <small id="backup-r2-state"></small></label>
 <button type="submit">Lưu bật/tắt sao lưu</button></form>
 <p id="backup-result" role="status"></p>
-<p class="notice">Công tắc tổng tạm dừng ghi sự kiện và tải lên, giữ lựa chọn từng nơi. Tắt lưu máy chủ: vẫn cần file tạm khi bật Drive/R2; chỉ dọn file mới sau khi xác nhận đủ bản sao. Không xóa video cũ khi tắt. Bộ đệm ngắn tự dọn; chỉ sự kiện được giữ thành video.</p>
+<p class="notice">Công tắc tổng tạm dừng ghi sự kiện và tải lên, giữ lựa chọn từng nơi. Tắt lưu máy chủ: vẫn cần file tạm khi bật Drive/R2; xóa file tạm ngay sau khi R2 xác nhận tải lên. Drive tiếp tục sao lưu từ R2. Nếu chỉ bật Drive, chờ Drive xác nhận mới dọn. Bộ đệm ngắn tự dọn; chỉ sự kiện được giữ thành video.</p>
 <h2>Thời gian lưu và kết nối kho</h2>
 <h3>Chính sách giữ bản ghi</h3><form id="cloud-policy-form">
 <label>Số ngày giữ video đã sao lưu trên máy chủ <input name="local_days" type="number" min="0" max="3650" value="0" required></label>
 
 <label>Số ngày giữ video trên Drive <input name="drive_days" type="number" min="0" max="3650" value="0" required></label>
 <button type="submit">Lưu thời gian lưu trữ</button></form>
-<p class="notice">Trên máy chủ: 0 = không tự xóa. Chỉ dọn video đã nén sau khi xác nhận có bản sao đủ dung lượng trên các nguồn đám mây đang bật; nếu bật cả Drive và R2 thì cần đủ hai bản sao. Nên giữ trên đám mây lâu hơn trên máy chủ. Video HD được giữ nguyên codec gốc để giảm tải CPU.<br>Trên Drive: 0 = không tự xóa. Khi đặt số ngày, video quá hạn trong thư mục bản ghi sẽ bị xóa vĩnh viễn.</p>
+<p class="notice">Trên máy chủ: 0 = không tự xóa. Khi tắt lưu máy chủ và bật R2: tải từng video ngay khi hoàn tất, xác nhận R2 rồi xóa file tạm; không chờ Drive. Drive lấy bản sao từ R2. Khi bật lưu máy chủ, áp dụng số ngày lưu và chỉ dọn sau khi xác nhận các bản sao cần thiết. Nên giữ trên đám mây lâu hơn trên máy chủ. Video HD được giữ nguyên codec gốc để giảm tải CPU.<br>Trên Drive: 0 = không tự xóa. Khi đặt số ngày, video quá hạn trong thư mục bản ghi sẽ bị xóa vĩnh viễn.</p>
 <h3>Cloudflare R2</h3><form id="r2-form">
 <label>Account ID <input name="account_id" maxlength="32" required autocomplete="off"></label>
 <label>Bucket <input name="bucket" maxlength="63" required></label>
@@ -1036,7 +1036,7 @@ el('backup-form').onsubmit=async event=>{
 el('cloud-policy-form').onsubmit=async event=>{
  event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
  try{const response=await fetch('/api/storage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({local_days:Number(form.elements.local_days.value),drive_days:Number(form.elements.drive_days.value)})});
- if(!response.ok)throw new Error(await response.text());el('cloud-result').textContent='Đã lưu thời gian giữ bản ghi trên máy chủ và Drive. Video trên máy chủ chỉ được dọn sau khi xác nhận bản sao đám mây.';loadCloudSettings();}
+ if(!response.ok)throw new Error(await response.text());el('cloud-result').textContent='Đã lưu thời gian giữ bản ghi trên máy chủ và Drive. Khi tắt lưu máy chủ, file tạm được xóa sau khi R2 xác nhận; Drive sao lưu từ R2.';loadCloudSettings();}
  catch(error){el('cloud-result').textContent=error.message;}finally{button.disabled=false;}
 };
 el('r2-form').onsubmit=async event=>{

@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 import yaml
 from vision import MotionDetector
-from core import Index, destination_targets, read_json, selected_mode, eligible_local_delete
+from core import Index, destination_targets, read_json, selected_mode, eligible_local_delete, remove_local_after_r2
 
 DATA = Path(os.getenv('DATA_DIR', '/app-data'))
 ROOT = Path(os.getenv('RECORDINGS_DIR', '/recordings'))
@@ -319,6 +319,10 @@ async def transfer(source,row,remote,targets):
                 with file.open('rb') as f: return hashlib.file_digest(f,'md5').hexdigest()
             if hashes['md5']!=await asyncio.to_thread(md5): raise RuntimeError('cloud checksum verification failed')
         INDEX.complete(row['path'],source,remote['target'])
+        if source=='r2':
+            policy,current=destination_targets(DATA)
+            if remove_local_after_r2(INDEX,row,ROOT,policy,current):
+                (DATA/'local-retention-status').write_text(f'R2 đã xác nhận; đã xóa video tạm trên máy chủ. Drive sao lưu từ R2.|{int(time.time())}')
     finally:
         if download: download.unlink(missing_ok=True)
 
@@ -332,7 +336,7 @@ async def uploader(source):
                 remote=targets[source]
                 cutoff=time.time()-remote['days']*86400 if remote['days'] else 0
                 INDEX.enqueue(source,remote['target'],cutoff)
-                row=INDEX.next_copy(source,remote['target'])
+                row=INDEX.next_copy(source,remote['target'],targets['r2']['target'] if source=='drive' and 'r2' in targets else None)
                 if row:
                     await transfer(source,row,remote,targets)
                     (DATA/(source+'-status')).write_text(f'Đã xác nhận sao lưu video mới|{int(time.time())}')

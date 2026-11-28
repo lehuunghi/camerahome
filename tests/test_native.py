@@ -6,7 +6,7 @@ import time
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'engine'))
-from core import Index, destination_targets, eligible_local_delete, selected_mode
+from core import Index, destination_targets, eligible_local_delete, selected_mode, remove_local_after_r2
 
 
 class NativeIndexTests(unittest.TestCase):
@@ -42,24 +42,44 @@ class NativeIndexTests(unittest.TestCase):
         self.assertFalse(self.index.confirmed(self.path,[('drive','new-folder')]))
         self.assertEqual(self.index.catalog('drive','new-folder'),{})
 
-    def test_retention_needs_all_enabled_copies(self):
+    def test_r2_confirmation_releases_staging_without_waiting_for_drive(self):
         targets=[('r2','bucket'),('drive','folder')]
         for source,target in targets:self.index.enqueue(source,target)
         policy={'backup_enabled':True,'local_enabled':False,'local_off_since':0,'local_days':0}
         row={'path':self.path,'at':time.time()}
-        self.index.complete(self.path,'r2','bucket')
         self.assertFalse(eligible_local_delete(row,policy,targets,self.index,time.time()))
+        self.index.complete(self.path,'r2','bucket')
+        self.assertTrue(eligible_local_delete(row,policy,targets,self.index,time.time()))
         self.index.complete(self.path,'drive','folder')
         self.assertTrue(eligible_local_delete(row,policy,targets,self.index,time.time()))
         policy['backup_enabled']=False
         self.assertFalse(eligible_local_delete(row,policy,targets,self.index,time.time()))
 
-    def test_switch_never_deletes_old_or_only_original(self):
+    def test_r2_primary_preserves_original_until_remote_confirmation(self):
         row={'path':self.path,'at':time.time()}
         p={'backup_enabled':True,'local_enabled':False,'local_off_since':time.time()*1000,'local_days':0}
         self.assertFalse(eligible_local_delete(row,p,[],self.index,time.time()))
         self.index.enqueue('r2','bucket');self.index.complete(self.path,'r2','bucket')
-        self.assertFalse(eligible_local_delete(row,p,[('r2','bucket')],self.index,time.time()-10))
+        self.assertTrue(eligible_local_delete(row,p,[('r2','bucket')],self.index,time.time()-10))
+
+    def test_drive_waits_for_r2_and_local_deletion_does_not_drop_its_job(self):
+        self.index.enqueue('r2','bucket');self.index.enqueue('drive','folder')
+        self.assertIsNone(self.index.next_copy('drive','folder',r2_first='bucket'))
+        p={'backup_enabled':True,'local_enabled':False}
+        targets={'r2':{'target':'bucket'},'drive':{'target':'folder'}}
+        row={'path':self.path,'size':self.file.stat().st_size}
+        self.assertFalse(remove_local_after_r2(self.index,row,self.root,p,targets))
+        self.index.complete(self.path,'r2','bucket')
+        self.assertTrue(remove_local_after_r2(self.index,row,self.root,p,targets))
+        self.assertFalse(self.file.exists())
+        self.assertIsNotNone(self.index.next_copy('drive','folder',r2_first='bucket'))
+        self.assertEqual(self.index.catalog('r2','bucket')[self.path],row['size'])
+
+    def test_local_storage_on_preserves_original_after_r2_upload(self):
+        self.index.enqueue('r2','bucket');self.index.complete(self.path,'r2','bucket')
+        row={'path':self.path,'size':self.file.stat().st_size}
+        self.assertFalse(remove_local_after_r2(self.index,row,self.root,{'local_enabled':True},{'r2':{'target':'bucket'}}))
+        self.assertTrue(self.file.exists())
 
     def test_error_backoff_is_persisted(self):
         self.index.enqueue('drive','folder')
