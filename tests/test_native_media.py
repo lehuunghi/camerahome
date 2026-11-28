@@ -19,7 +19,7 @@ class NativeMediaTests(unittest.IsolatedAsyncioTestCase):
         import service
         self.service=service
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
-        self.old={k:getattr(service,k) for k in ['DATA','ROOT','SPOOL','INDEX','EXPORT_LOCK']}
+        self.old={k:getattr(service,k) for k in ['DATA','ROOT','SPOOL','INDEX','EXPORT_LOCK','STATUS','ffmpeg']}
         service.DATA=self.root/'data';service.ROOT=self.root/'recordings';service.SPOOL=self.root/'spool'
         for p in [service.DATA,service.ROOT,service.SPOOL]:p.mkdir()
         from core import Index
@@ -50,6 +50,24 @@ class NativeMediaTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(db.execute('SELECT count(*) FROM clips').fetchone()[0],1)
             self.assertEqual(db.execute('SELECT state FROM segments').fetchone()[0],'done')
         self.assertFalse(list(service.ROOT.rglob('*.working')))
+
+    async def test_tapo_g711_audio_survives_buffer_and_mp4(self):
+        import csv
+        service=self.service;source=self.root/'tapo.mkv'
+        proc=await asyncio.create_subprocess_exec('ffmpeg','-loglevel','error','-y',
+            '-f','lavfi','-i','testsrc2=size=640x360:rate=5','-f','lavfi','-i','sine=frequency=440:sample_rate=8000',
+            '-t','2','-c:v','libx264','-preset','ultrafast','-threads','1','-c:a','pcm_alaw',str(source))
+        self.assertEqual(await proc.wait(),0)
+        service.ffmpeg=lambda camera:['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-i',str(source)]
+        service.STATUS={'test':{}}
+        await asyncio.wait_for(service.capture('test'),10)
+        listing=next(service.SPOOL.glob('test/*/segments.csv'))
+        row=next(csv.reader(listing.open()))
+        segments=[{'path':row[0],'start':1795860000.,'end':1795860000.+float(row[2])-float(row[1])}]
+        await service.export_segments('test',segments)
+        output=next(service.ROOT.glob('*/*/*/*.mp4'))
+        info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(output)]))
+        self.assertTrue(any(s['codec_type']=='audio' and s['codec_name']=='aac' for s in info['streams']))
 
     async def test_stopping_a_full_video_pipe_does_not_hang(self):
         proc=await self.service.spawn(['ffmpeg','-loglevel','error','-f','lavfi','-i',

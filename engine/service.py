@@ -244,7 +244,7 @@ async def collect():
                     selected = [dict(r) for r in db.execute("SELECT * FROM segments WHERE camera=? AND state='selected' ORDER BY start", (camera,))]
                 batch=[]
                 for row in selected:
-                    if batch and (row['start']-batch[-1]['end']>2 or row['end']-batch[0]['start']>178):
+                    if batch and (Path(row['path']).parent!=Path(batch[-1]['path']).parent or row['start']-batch[-1]['end']>2 or row['end']-batch[0]['start']>178):
                         await export_segments(camera,batch);batch=[]
                     batch.append(row)
                 if batch and now-batch[-1]['end']>25:
