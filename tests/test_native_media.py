@@ -65,4 +65,28 @@ class NativeMediaTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(model.cry,20)
         self.assertLess(model.score(np.zeros(model.samples,dtype=np.float32)),.35)
 
+@unittest.skipUnless(HAS_CV,'requires native engine dependencies')
+class MotionTests(unittest.TestCase):
+    def test_static_noise_and_global_brightness_do_not_trigger(self):
+        import numpy as np
+        from vision import MotionDetector
+        detector=MotionDetector()
+        frame=np.full((180,320,3),80,np.uint8)
+        for _ in range(20):self.assertFalse(detector.feed(frame)[0])
+        rng=np.random.default_rng(42)
+        for _ in range(20):
+            noisy=frame+rng.integers(0,4,size=frame.shape,dtype=np.uint8)
+            self.assertFalse(detector.feed(noisy)[0])
+        self.assertFalse(detector.feed(np.full_like(frame,140))[0])
+        self.assertFalse(detector.feed(np.full_like(frame,140))[0])
+
+    def test_localized_motion_requires_confirmation(self):
+        import numpy as np
+        from vision import MotionDetector
+        detector=MotionDetector();frame=np.zeros((180,320,3),np.uint8)
+        for _ in range(20):detector.feed(frame)
+        moving=frame.copy();moving[50:90,100:150]=200
+        self.assertFalse(detector.feed(moving)[0])
+        self.assertTrue(detector.feed(moving)[0])
+
 if __name__=='__main__':unittest.main()

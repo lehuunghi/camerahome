@@ -17,6 +17,7 @@ from aiohttp import web
 import cv2
 import numpy as np
 import yaml
+from vision import MotionDetector
 from core import Index, destination_targets, read_json, selected_mode, eligible_local_delete
 
 DATA = Path(os.getenv('DATA_DIR', '/app-data'))
@@ -78,34 +79,17 @@ def hit(camera, kind, score):
 
 
 async def motion(camera):
-    """Analyze only the substream; brightness shifts and isolated pixels are suppressed."""
-    proc = await spawn(ffmpeg(camera+'__compact')+['-an', '-vf', 'fps=3,scale=320:180', '-pix_fmt', 'gray', '-f', 'rawvideo', 'pipe:1'], True)
-    background = None
-    consecutive = 0
-    frames = 0
+    proc = await spawn(ffmpeg(camera+'__compact')+['-an', '-vf', 'fps=3,scale=320:180', '-pix_fmt', 'bgr24', '-f', 'rawvideo', 'pipe:1'], True)
+    detector=MotionDetector()
     try:
         while True:
-            raw = await asyncio.wait_for(proc.stdout.readexactly(320*180), 20)
-            frame = np.frombuffer(raw, np.uint8).reshape(180, 320)
-            blur = cv2.GaussianBlur(frame, (5, 5), 0)
-            frames += 1
-            STATUS[camera]['last_frame'] = time.time()
-            STATUS[camera]['frame'] = frame.copy()
-            if background is None:
-                background = blur.astype(np.float32)
-                continue
-            difference = cv2.absdiff(blur, cv2.convertScaleAbs(background))
-            difference = cv2.subtract(difference, np.full_like(difference, int(np.median(difference))))
-            mask = cv2.threshold(difference, 22, 255, cv2.THRESH_BINARY)[1]
-            mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3,3), np.uint8))
-            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            area = max((cv2.contourArea(c) for c in contours), default=0)
-            moving = area > 140 and frames > 15
-            consecutive = consecutive+1 if moving else 0
-            if consecutive >= 2 and selected_mode(config()['cameras'][camera])[0] and can_record():
-                hit(camera, 'motion', area/(320*180))
-                consecutive = 0
-            cv2.accumulateWeighted(blur, background, .04)
+            raw=await asyncio.wait_for(proc.stdout.readexactly(320*180*3),20)
+            frame=np.frombuffer(raw,np.uint8).reshape(180,320,3)
+            STATUS[camera]['last_frame']=time.time()
+            STATUS[camera]['frame']=frame.copy()
+            triggered,score=detector.feed(frame)
+            if triggered and selected_mode(config()['cameras'][camera])[0] and can_record():
+                hit(camera,'motion',score)
     finally:
         await stop(proc)
 
@@ -524,6 +508,7 @@ async def cleanup(app):
 
 
 if __name__=='__main__':
+    os.umask(0o077)
     if '--prepare' in __import__('sys').argv:
         DATA.mkdir(parents=True,exist_ok=True);render_go(config())
     else:
