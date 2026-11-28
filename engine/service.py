@@ -334,7 +334,7 @@ async def uploader(source):
             p,targets=destination_targets(DATA)
             if source in targets and not paused():
                 remote=targets[source]
-                cutoff=time.time()-remote['days']*86400 if remote['days'] else 0
+                cutoff=time.time()-remote['retention_seconds'] if remote['retention_seconds'] else 0
                 INDEX.enqueue(source,remote['target'],cutoff)
                 row=INDEX.next_copy(source,remote['target'],targets['r2']['target'] if source=='drive' and 'r2' in targets else None)
                 if row:
@@ -364,7 +364,7 @@ async def retention():
                         file.unlink()
                         with INDEX.connect() as db: db.execute('UPDATE clips SET deleted_local=1 WHERE path=?',(row['path'],))
                     for source,r in targets.items():
-                        if not r['days'] or row['at']>=time.time()-r['days']*86400: continue
+                        if not r['retention_seconds'] or row['at']>=time.time()-r['retention_seconds']: continue
                         # R2 is the fallback original: do not expire it before Drive confirms.
                         if source=='r2' and 'drive' in targets and not INDEX.confirmed(row['path'],[('drive',targets['drive']['target'])]): continue
                         if not INDEX.confirmed(row['path'],[(source,r['target'])]): continue

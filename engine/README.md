@@ -25,3 +25,7 @@ The old clip timer is disabled. Existing per-camera cleanup and confirmed global
 Rollback: stop native engine/go2rtc; restore the saved host compose/config and recreate the old services using their installed images; enable the old clips timer. No migration backup contains public repository files or credentials.
 
 Tests: `python -m unittest discover -s tests -v`; inside engine image, `python -m unittest discover -s /tests -v`. Rust tests remain `cargo test --release`.
+
+## Independent retention settings
+
+Administration → Thời gian giữ video has separate server and R2 duration controls in hours or days. Durations are stored as seconds in cloud-policy.json; absent fields preserve the legacy day settings. Zero disables expiry. Saving retention never changes backup switches or credentials. Server duration applies only with local storage enabled; local-off continues immediate verified-R2 cleanup. R2 expiry still protects copies awaiting enabled Drive backup.

@@ -110,11 +110,11 @@ def destination_targets(data):
     if p.get('drive_enabled', True) and (data/'drive.conf').is_file() and (data/'drive-folder').is_file():
         folder = (data/'drive-folder').read_text().strip()
         targets['drive'] = {'target': f'drive:{folder}/recordings', 'config': str(data/'drive.conf'),
-                            'days': p.get('drive_days', 0), 'env': {}}
+                            'days': p.get('drive_days', 0), 'retention_seconds': int(p.get('drive_days',0))*86400, 'env': {}}
     r2 = read_json(data/'r2.json', {})
     if r2 and p.get('r2_enabled', r2.get('enabled', False)):
         targets['r2'] = {'target': f"r2:{r2['bucket']}/{r2['prefix']}/recordings", 'config': '/dev/null',
-                         'days': r2['days'], 'env': {
+                         'days': r2['days'], 'retention_seconds': retention_seconds(p,'r2',r2['days']), 'env': {
             'RCLONE_CONFIG_R2_TYPE': 's3', 'RCLONE_CONFIG_R2_PROVIDER': 'Cloudflare',
             'RCLONE_CONFIG_R2_ACCESS_KEY_ID': r2['access_key'],
             'RCLONE_CONFIG_R2_SECRET_ACCESS_KEY': r2['secret_key'],
@@ -146,8 +146,8 @@ def eligible_local_delete(row, policy, targets, index, modified):
         return False
     staged = (not policy.get('local_enabled', True) and policy.get('local_off_since') is not None
               and modified * 1000 >= policy['local_off_since'])
-    days = policy.get('local_days', 0)
-    return staged or (days > 0 and row['at'] < time.time()-days*86400)
+    seconds=retention_seconds(policy,'local',policy.get('local_days',0))
+    return staged or (seconds>0 and row['at']<time.time()-seconds)
 
 
 def remove_local_after_r2(index, row, root, policy, targets):
@@ -162,3 +162,8 @@ def remove_local_after_r2(index, row, root, policy, targets):
     with index.connect() as db:
         db.execute('UPDATE clips SET deleted_local=1 WHERE path=?',(row['path'],))
     return True
+
+
+def retention_seconds(policy,source,legacy_days):
+    value=policy.get(source+'_retention_seconds')
+    return int(legacy_days)*86400 if value is None else max(0,int(value))

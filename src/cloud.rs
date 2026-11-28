@@ -20,8 +20,8 @@ async fn private(path:&str,bytes:&[u8])->Result<(),Problem>{
 struct R2 {account_id:String,bucket:String,prefix:String,access_key:String,secret_key:String,days:u32,enabled:bool}
 #[derive(Clone,Serialize,Deserialize)]
 #[serde(default)]
-pub(crate) struct Policy {drive_days:u32,drive_enabled:bool,local_days:u32,backup_enabled:bool,local_enabled:bool,r2_enabled:Option<bool>,local_off_since:Option<i64>}
-impl Default for Policy{fn default()->Self{Self{drive_days:0,drive_enabled:true,local_days:0,backup_enabled:true,local_enabled:true,r2_enabled:None,local_off_since:None}}}
+pub(crate) struct Policy {drive_days:u32,drive_enabled:bool,local_days:u32,backup_enabled:bool,local_enabled:bool,r2_enabled:Option<bool>,local_off_since:Option<i64>,local_retention_seconds:Option<u64>,r2_retention_seconds:Option<u64>}
+impl Default for Policy{fn default()->Self{Self{drive_days:0,drive_enabled:true,local_days:0,backup_enabled:true,local_enabled:true,r2_enabled:None,local_off_since:None,local_retention_seconds:None,r2_retention_seconds:None}}}
 async fn r2()->Result<R2,Problem>{serde_json::from_slice(&fs::read(R2_FILE).await.map_err(|_|(StatusCode::CONFLICT,"Chưa kết nối Cloudflare R2."))?).map_err(|_|error())}
 pub(crate) async fn policy()->Policy{fs::read(POLICY).await.ok().and_then(|v|serde_json::from_slice(&v).ok()).unwrap_or_default()}
 struct Remote {config:String,target:String,env:Vec<(String,String)>}
@@ -70,6 +70,7 @@ async fn output(remote:&Remote,args:&[&str],seconds:u64)->Result<Vec<u8>,Problem
 pub fn routes()->Router<App>{
  Router::new().route("/api/storage",get(settings).post(save_policy))
  .route("/api/storage/r2",post(save_r2))
+ .route("/api/storage/retention",post(save_retention))
  .route("/api/storage/backup",post(save_backup))
  .route("/api/cloud/clips",get(clips))
  .route("/api/cloud/media/{source}/{*path}",get(media))
@@ -78,7 +79,7 @@ async fn settings()->Json<Value>{
  let policy=policy().await;
  let r=r2().await.ok();
  let last=fs::read_to_string("/app-data/r2-status").await.unwrap_or_default();
- Json(json!({"backup_enabled":policy.backup_enabled,"local_enabled":policy.local_enabled,"r2_enabled":r.as_ref().is_some_and(|c|policy.r2_enabled.unwrap_or(c.enabled)),"drive_configured":remote("drive").await.is_ok(),"drive_days":policy.drive_days,"drive_enabled":policy.drive_enabled,"local_days":policy.local_days,"r2":r.map(|c|json!({"account_id":c.account_id,"bucket":c.bucket,"prefix":c.prefix,"days":c.days,"enabled":c.enabled,"configured":true})),"r2_status":last,"local_status":fs::read_to_string("/app-data/local-retention-status").await.unwrap_or_default()}))
+ Json(json!({"local_retention_seconds":policy.local_retention_seconds.unwrap_or(u64::from(policy.local_days)*86400),"r2_retention_seconds":policy.r2_retention_seconds.unwrap_or(r.as_ref().map_or(30*86400,|c|u64::from(c.days)*86400)),"backup_enabled":policy.backup_enabled,"local_enabled":policy.local_enabled,"r2_enabled":r.as_ref().is_some_and(|c|policy.r2_enabled.unwrap_or(c.enabled)),"drive_configured":remote("drive").await.is_ok(),"drive_days":policy.drive_days,"drive_enabled":policy.drive_enabled,"local_days":policy.local_days,"r2":r.map(|c|json!({"account_id":c.account_id,"bucket":c.bucket,"prefix":c.prefix,"days":c.days,"enabled":c.enabled,"configured":true})),"r2_status":last,"local_status":fs::read_to_string("/app-data/local-retention-status").await.unwrap_or_default()}))
 }
 #[derive(Deserialize)]
 struct RetentionEdit {drive_days:u32,local_days:u32}
@@ -87,6 +88,24 @@ async fn save_policy(State(app):State<App>,headers:HeaderMap,Json(edit):Json<Ret
  if edit.drive_days>3650||edit.local_days>3650{return Err(bad());}
  let _lock=app.management.lock().await;
  let mut p=policy().await;p.drive_days=edit.drive_days;p.local_days=edit.local_days;
+ private(POLICY,&serde_json::to_vec(&p).map_err(|_|bad())?).await?;
+ Ok(StatusCode::NO_CONTENT)
+}
+#[derive(Deserialize)]
+struct DurationInput {value:u64,unit:String}
+impl DurationInput {
+ fn seconds(&self)->Result<u64,Problem>{
+  let multiplier=match self.unit.as_str(){"hours"=>3600,"days"=>86400,_=>return Err(bad())};
+  self.value.checked_mul(multiplier).filter(|seconds|*seconds<=3650*86400).ok_or_else(bad)
+ }
+}
+#[derive(Deserialize)]
+struct StorageRetention {local:DurationInput,r2:DurationInput}
+async fn save_retention(State(app):State<App>,headers:HeaderMap,Json(edit):Json<StorageRetention>)->Result<StatusCode,Problem>{
+ crate::manage::require_origin(&headers)?;
+ let local=edit.local.seconds()?;let r2=edit.r2.seconds()?;
+ let _guard=app.management.lock().await;
+ let mut p=policy().await;p.local_retention_seconds=Some(local);p.r2_retention_seconds=Some(r2);
  private(POLICY,&serde_json::to_vec(&p).map_err(|_|bad())?).await?;
  Ok(StatusCode::NO_CONTENT)
 }
@@ -471,6 +490,13 @@ pub async fn backup_worker(app:App){
  p.local_off_since=Some(modified-1000);assert!(is_staging(&p,&path));
  p.local_enabled=true;assert!(!is_staging(&p,&path));
  std::fs::remove_file(path).unwrap();
+}
+ #[test]fn retention_units_and_limits(){
+ assert_eq!(DurationInput{value:6,unit:"hours".into()}.seconds().unwrap(),21600);
+ assert_eq!(DurationInput{value:2,unit:"days".into()}.seconds().unwrap(),172800);
+ assert_eq!(DurationInput{value:0,unit:"hours".into()}.seconds().unwrap(),0);
+ assert!(DurationInput{value:u64::MAX,unit:"days".into()}.seconds().is_err());
+ assert!(DurationInput{value:1,unit:"minutes".into()}.seconds().is_err());
 }
  #[test]fn legacy_policy_preserves_storage(){
  let p:Policy=serde_json::from_str(r#"{"drive_enabled":false,"local_days":1}"#).unwrap();

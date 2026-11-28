@@ -6,7 +6,7 @@ import time
 import unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'engine'))
-from core import Index, destination_targets, eligible_local_delete, selected_mode, remove_local_after_r2
+from core import Index, destination_targets, eligible_local_delete, selected_mode, remove_local_after_r2, retention_seconds
 
 
 class NativeIndexTests(unittest.TestCase):
@@ -80,6 +80,16 @@ class NativeIndexTests(unittest.TestCase):
         row={'path':self.path,'size':self.file.stat().st_size}
         self.assertFalse(remove_local_after_r2(self.index,row,self.root,{'local_enabled':True},{'r2':{'target':'bucket'}}))
         self.assertTrue(self.file.exists())
+
+    def test_hour_retention_and_legacy_days(self):
+        self.assertEqual(retention_seconds({},'r2',30),30*86400)
+        self.assertEqual(retention_seconds({'r2_retention_seconds':7200},'r2',30),7200)
+        self.assertEqual(retention_seconds({'r2_retention_seconds':0},'r2',30),0)
+        self.assertEqual(retention_seconds({'r2_retention_seconds':None},'r2',7),7*86400)
+        self.index.enqueue('r2','bucket');self.index.complete(self.path,'r2','bucket')
+        p={'backup_enabled':True,'local_enabled':True,'local_retention_seconds':7200}
+        self.assertFalse(eligible_local_delete({'path':self.path,'at':time.time()-3600},p,[('r2','bucket')],self.index,time.time()))
+        self.assertTrue(eligible_local_delete({'path':self.path,'at':time.time()-7201},p,[('r2','bucket')],self.index,time.time()))
 
     def test_error_backoff_is_persisted(self):
         self.index.enqueue('drive','folder')

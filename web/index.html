@@ -2,6 +2,7 @@
 <html lang="vi">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CameraHome</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
   color-scheme: light;
@@ -147,6 +148,25 @@ video { border:0; }
   .recording-filters input[type=date] {min-height:42px}
 }
 ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--muted);font-size:.9rem;line-height:1.6}ol.drive-steps li{margin:7px 0}.drive-steps a{color:var(--accent)}
+/* CameraHome · quiet workspace */
+:root{--background:#fff;--surface:#f7f7f8;--text:#171717;--muted:#737373;--line:#e5e5e5;--accent:#171717;--accent-pale:#ececec;--monitor:#111;font-family:'Be Vietnam Pro',sans-serif;font-weight:400;color-scheme:light}
+body{font-size:14px;line-height:1.6;letter-spacing:-.015em}
+header{position:fixed;inset:0 auto 0 0;width:232px;background:#f9f9f9;border:0;z-index:10}
+.header-row.shell{width:100%;height:100%;padding:28px 16px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:30px}
+.brand{font-size:17px;font-weight:600;letter-spacing:-.035em;padding:0 8px;gap:10px}.brand-icon{width:28px;height:28px;border-radius:5px;background:#171717}
+nav{display:flex;flex-direction:column;gap:5px;padding:0;background:transparent;border:0;box-shadow:none}nav a{padding:10px 13px;border-radius:5px;font-weight:500;color:var(--text);font-size:13px}nav a[aria-current=page]{background:#ececec;color:#171717;box-shadow:none}nav a:hover{background:#eee}
+#logout{margin-top:auto;align-self:flex-start;color:var(--muted)}main.shell{width:calc(100% - 232px);max-width:1450px;margin-left:232px;padding:40px clamp(22px,4vw,64px) 60px}
+h1{font-size:clamp(25px,3vw,34px);font-weight:600;letter-spacing:-.045em;line-height:1.3}h2{font-size:18px;font-weight:600}h3{font-size:14px;font-weight:600}.view-heading{margin-bottom:28px}.bar,.notice{font-size:12px;line-height:1.8}.bar{margin-top:8px}
+.panel,.card,.monitor{background:transparent;border:0;box-shadow:none;border-radius:5px}.panel{padding:24px 0}.panel+.panel{margin-top:12px}.section-heading{margin-bottom:22px}.eyebrow{font-size:10px;font-weight:600;letter-spacing:.16em;color:var(--muted);display:block;margin-bottom:9px}
+#view-admin{max-width:960px;margin-inline:auto}#view-admin>.panel>h2{margin-bottom:16px}#view-admin form{gap:16px 20px}#view-admin .notice{max-width:780px}
+input,select,button{font-family:inherit;font-size:13px;border-radius:5px}input,select{background:var(--surface);border:1px solid transparent;min-height:42px;padding:10px 12px}input:focus,select:focus{border-color:#b4b4b4;outline:0;background:var(--background)}input[type=checkbox]{min-height:auto;accent-color:#171717}label{font-weight:400}button{background:var(--surface);border:0;font-weight:500;padding:10px 16px}button:hover:not(:disabled){background:#e8e8e8;border-color:transparent}.accent{background:#171717;color:#fff}.accent:hover:not(:disabled){background:#333;color:#fff}:focus-visible{outline:2px solid #999;outline-offset:3px}
+.live-layout{grid-template-columns:minmax(0,2.6fr) minmax(230px,1fr);gap:28px}.monitor .title{padding:0 0 12px}.monitor .title h2{font-size:16px}.monitor video{border-radius:5px;max-height:65vh}.monitor-tools{gap:10px;padding:12px 0}.icon-button,.monitor .icon-button,.monitor #live-sound{background:transparent;border:0;color:var(--text);min-width:36px;min-height:36px}.icon-button:hover:not(:disabled),.monitor .icon-button:hover:not(:disabled),.monitor #live-sound:hover{background:var(--surface);color:var(--text)}.monitor select{background:var(--surface);border:0;color:var(--text)}.tool-group+.tool-group{border:0;padding-left:5px}.camera-list-title{font-size:12px;color:var(--muted);font-weight:500;letter-spacing:.02em;margin-bottom:14px}.card{padding:9px 5px;grid-template-columns:92px 1fr;gap:2px 12px}.card[data-active=true]{background:var(--surface);box-shadow:none}.card img{border-radius:5px}.camera-meta strong{font-size:13px;font-weight:500}.camera-meta span{font-size:11px}.camera-meta .online{color:#16866d}.actions button{color:var(--muted)}.grid{gap:10px}
+.retention-target{padding:20px;background:var(--surface);border-radius:5px}.duration-row{display:grid;grid-template-columns:minmax(0,1fr) 115px;gap:12px}.duration-row input,.duration-row select{background:var(--background)}#retention-form{grid-template-columns:1fr 1fr}#retention-form>button{grid-column:1/-1;justify-self:start;min-width:150px}.hint{font-size:11px;color:var(--muted);line-height:1.8;margin-top:14px}#retention-result,#backup-result,#cloud-result{font-size:12px;margin-top:12px}#backup-form{background:var(--surface);padding:16px 20px;border-radius:5px}#backup-form button{background:var(--background)}#backup-form .check{font-size:12px}#backup-form small{color:var(--muted);font-size:10px}
+#player,#replay-frame{border-radius:5px}.clip-list li{border:0}.clip-list button{background:transparent}.clip-list .active-clip{background:var(--surface)}.timeline-track{background:var(--line)}.timeline-track i{background:#737373}.danger{color:#b42318;background:#fff2f0}#account-form fieldset{background:var(--surface);padding:12px 16px;border:0;border-radius:5px}
+@media(max-width:1050px){header{width:200px}main.shell{margin-left:200px;width:calc(100% - 200px);padding-inline:26px}.live-layout{grid-template-columns:1fr}.grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}}
+@media(max-width:680px){header{position:relative;width:100%;height:64px;background:var(--background)}.header-row.shell{padding:12px 18px;height:64px;display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px}.brand{padding:0;font-size:16px}#logout{margin:0}nav{position:fixed;inset:auto 0 0;display:flex;flex-direction:row;justify-content:space-around;gap:4px;padding:8px 12px calc(8px + env(safe-area-inset-bottom));background:var(--background);border-top:1px solid var(--line);border-radius:0;box-shadow:none}nav a{flex:1;text-align:center;padding:10px 5px;font-size:12px}main.shell{width:100%;margin:0;padding:18px 18px calc(90px + env(safe-area-inset-bottom))}.view-heading{margin-bottom:20px}.live-layout{gap:22px}.grid{grid-template-columns:1fr 1fr;gap:6px}.card{grid-template-columns:1fr;padding:8px;gap:7px}.camera-preview{grid-row:auto}.camera-meta strong{font-size:12px}.actions{gap:0}.card .actions button{min-width:30px;min-height:30px}.monitor-tools{gap:4px}.tool-group{gap:2px}.icon-button{min-width:34px;padding:4px}#retention-form{grid-template-columns:1fr}.retention-target{padding:16px}#view-admin form{gap:14px}.panel{padding-block:18px}.duration-row{grid-template-columns:minmax(0,1fr) 110px}}
+@media(prefers-color-scheme:dark){:root{color-scheme:dark;--background:#212121;--surface:#2f2f2f;--text:#ececec;--muted:#aaa;--line:#424242;--accent:#ececec;--accent-pale:#383838}header{background:#171717}nav a[aria-current=page],nav a:hover{background:#303030;color:#ececec}.brand-icon{background:#ececec;color:#171717}.accent{background:#ececec;color:#171717}.accent:hover:not(:disabled){background:#ddd;color:#171717}button:hover:not(:disabled){background:#414141}.danger{background:#382421;color:#ffb4a9}@media(max-width:680px){header,nav{background:var(--background)}}}
+
 </style></head>
 <body>
 <header><div class="shell header-row"><div class="brand"><span aria-hidden="true" class="brand-icon"></span><span id="site-brand">CameraHome</span></div>
@@ -231,6 +251,12 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <label>OAuth Client Secret <input name="client_secret" type="password" required autocomplete="new-password" maxlength="300"></label>
 <button class="accent" type="submit">Kết nối Google Drive</button>
 </form><p id="drive-result" role="status"></p></details></section>
+<section class="panel" id="retention-panel" hidden>
+<div class="section-heading"><span class="eyebrow">LƯU TRỮ</span><h2>Thời gian giữ video</h2><p class="notice">Đặt riêng cho từng nơi. Thay đổi ở đây không đổi công tắc sao lưu.</p></div>
+<form id="retention-form">
+<div class="retention-target"><h3>Máy chủ</h3><p class="notice" id="local-retention-mode"></p><div class="duration-row"><label>Thời gian <input name="local_value" type="number" min="0" max="87600" step="1" required></label><label>Đơn vị <select name="local_unit"><option value="hours">Giờ</option><option value="days">Ngày</option></select></label></div><p class="hint">Áp dụng khi bật lưu trên máy chủ. Tắt lưu máy chủ: xóa file sau khi R2 xác nhận. Chưa sao lưu thành công sẽ giữ lại.</p></div>
+<div class="retention-target"><h3>Cloudflare R2</h3><p class="notice">Tính từ thời điểm ghi hình.</p><div class="duration-row"><label>Thời gian <input name="r2_value" type="number" min="0" max="87600" step="1" required></label><label>Đơn vị <select name="r2_unit"><option value="hours">Giờ</option><option value="days">Ngày</option></select></label></div><p class="hint">Quá thời hạn sẽ tự dọn. Bản đang chờ sao lưu Drive vẫn được bảo vệ. Đặt 0 để không tự xóa.</p></div>
+<button type="submit" class="accent">Lưu thời gian</button></form><p id="retention-result" role="status"></p></section>
 <section class="panel" id="cloud-panel" hidden><h2>Bật/tắt sao lưu</h2><p id="engine-status" role="status"></p>
 <form id="backup-form">
 <label class="check"><input name="backup_enabled" type="checkbox"> Bật sao lưu tự động</label>
@@ -240,20 +266,20 @@ ol.drive-steps{list-style:decimal;padding-left:22px;margin:12px 0;color:var(--mu
 <button type="submit">Lưu bật/tắt sao lưu</button></form>
 <p id="backup-result" role="status"></p>
 <p class="notice">Công tắc tổng tạm dừng ghi sự kiện và tải lên, giữ lựa chọn từng nơi. Tắt lưu máy chủ: vẫn cần file tạm khi bật Drive/R2; xóa file tạm ngay sau khi R2 xác nhận tải lên. Drive tiếp tục sao lưu từ R2. Nếu chỉ bật Drive, chờ Drive xác nhận mới dọn. Bộ đệm ngắn tự dọn; chỉ sự kiện được giữ thành video.</p>
-<h2>Thời gian lưu và kết nối kho</h2>
-<h3>Chính sách giữ bản ghi</h3><form id="cloud-policy-form">
-<label>Số ngày giữ video đã sao lưu trên máy chủ <input name="local_days" type="number" min="0" max="3650" value="0" required></label>
+<h2>Kết nối kho sao lưu</h2>
+<h3>Google Drive</h3><form id="cloud-policy-form">
+<input name="local_days" type="hidden" value="0">
 
 <label>Số ngày giữ video trên Drive <input name="drive_days" type="number" min="0" max="3650" value="0" required></label>
 <button type="submit">Lưu thời gian lưu trữ</button></form>
-<p class="notice">Trên máy chủ: 0 = không tự xóa. Khi tắt lưu máy chủ và bật R2: tải từng video ngay khi hoàn tất, xác nhận R2 rồi xóa file tạm; không chờ Drive. Drive lấy bản sao từ R2. Khi bật lưu máy chủ, áp dụng số ngày lưu và chỉ dọn sau khi xác nhận các bản sao cần thiết. Nên giữ trên đám mây lâu hơn trên máy chủ. Video HD được giữ nguyên codec gốc để giảm tải CPU.<br>Trên Drive: 0 = không tự xóa. Khi đặt số ngày, video quá hạn trong thư mục bản ghi sẽ bị xóa vĩnh viễn.</p>
+<p class="notice">Thời gian giữ video trên máy chủ và R2 được đặt ở mục riêng bên trên. Drive: 0 = không tự xóa.</p>
 <h3>Cloudflare R2</h3><form id="r2-form">
 <label>Account ID <input name="account_id" maxlength="32" required autocomplete="off"></label>
 <label>Bucket <input name="bucket" maxlength="63" required></label>
 <label>Thư mục riêng <input name="prefix" value="camerahome" required maxlength="100"></label>
 <label>Access Key ID <input name="access_key" autocomplete="off" placeholder="Để trống để giữ khóa đã lưu"></label>
 <label>Secret Access Key <input name="secret_key" type="password" autocomplete="new-password" placeholder="Để trống để giữ khóa đã lưu"></label>
-<label>Số ngày giữ video trên R2 <input name="days" type="number" min="1" max="3650" value="30" required></label>
+<input name="days" type="hidden" value="30">
 
 <button type="submit" class="accent">Kiểm tra và lưu R2</button></form>
 <p class="notice">Cần bucket đã tạo và khóa có quyền đọc, ghi, xóa đối tượng trong bucket. Video quá hạn sẽ bị xóa vĩnh viễn, tính từ lúc ghi hình. Chỉ dọn thư mục bản ghi của ứng dụng; Hàng đợi nhận video ngay khi hoàn tất đoạn; tác vụ tải lỗi sẽ tự thử lại. Khóa được lưu riêng trên máy chủ.</p>
@@ -1009,6 +1035,9 @@ async function loadCloudSettings(){
  try{
   const state=await read('/api/storage'),policy=el('cloud-policy-form').elements,fields=el('r2-form').elements;
   policy.local_days.value=state.local_days||0;
+  const retention=el('retention-form').elements;
+  for(const key of ['local','r2']){const seconds=Number(state[key+'_retention_seconds']||0);const unit=seconds%86400===0?'days':'hours';retention[key+'_unit'].value=unit;retention[key+'_value'].value=seconds/(unit==='days'?86400:3600);}
+  el('local-retention-mode').textContent=state.local_enabled?'Đang giữ bản ghi trên máy chủ.':'Hiện xóa ngay sau khi R2 xác nhận.';
   const [localMessage,localAt]=(state.local_status||"Chưa bật tự dọn video đã sao lưu trên máy chủ.").split("|");
   el("local-retention-status").textContent=localMessage+(localAt?" · "+new Date(Number(localAt)*1000).toLocaleString("vi-VN"):"");
   policy.drive_days.value=state.drive_days;
@@ -1033,10 +1062,17 @@ el('backup-form').onsubmit=async event=>{
   await loadCloudSettings();
  }catch(error){el('backup-result').textContent=error.message;}finally{button.disabled=false;}
 };
+el('retention-form').onsubmit=async event=>{
+ event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
+ try{const body={};for(const key of ['local','r2'])body[key]={value:Number(form.elements[key+'_value'].value),unit:form.elements[key+'_unit'].value};
+ const response=await fetch('/api/storage/retention',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ if(!response.ok)throw new Error(await response.text());el('retention-result').textContent='Đã lưu thời gian riêng cho máy chủ và R2.';await loadCloudSettings();}
+ catch(error){el('retention-result').textContent=error.message;}finally{button.disabled=false;}
+};
 el('cloud-policy-form').onsubmit=async event=>{
  event.preventDefault();const form=event.currentTarget,button=form.querySelector('button');button.disabled=true;
  try{const response=await fetch('/api/storage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({local_days:Number(form.elements.local_days.value),drive_days:Number(form.elements.drive_days.value)})});
- if(!response.ok)throw new Error(await response.text());el('cloud-result').textContent='Đã lưu thời gian giữ bản ghi trên máy chủ và Drive. Khi tắt lưu máy chủ, file tạm được xóa sau khi R2 xác nhận; Drive sao lưu từ R2.';loadCloudSettings();}
+ if(!response.ok)throw new Error(await response.text());el('cloud-result').textContent='Đã lưu thời gian giữ video trên Google Drive. Khi tắt lưu máy chủ, file tạm được xóa sau khi R2 xác nhận; Drive sao lưu từ R2.';loadCloudSettings();}
  catch(error){el('cloud-result').textContent=error.message;}finally{button.disabled=false;}
 };
 el('r2-form').onsubmit=async event=>{
@@ -1086,7 +1122,7 @@ async function initializePage(){
   el('cleanup').hidden=!session.admin;
   el('accounts-panel').hidden=!session.admin;
   el('site-panel').hidden=!session.admin;
-  el('cloud-panel').hidden=!session.admin;
+  el('cloud-panel').hidden=!session.admin;el('retention-panel').hidden=!session.admin;
   const savedSource=localStorage.getItem('recording-source');if(['local','drive','r2'].includes(savedSource))el('recording-source').value=savedSource;
   updateSourceSummary();
   if(session.admin)loadCloudSettings();
