@@ -51,6 +51,13 @@ class NativeMediaTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(db.execute('SELECT state FROM segments').fetchone()[0],'done')
         self.assertFalse(list(service.ROOT.rglob('*.working')))
 
+    async def test_stopping_a_full_video_pipe_does_not_hang(self):
+        proc=await self.service.spawn(['ffmpeg','-loglevel','error','-f','lavfi','-i',
+            'testsrc2=size=1920x1080:rate=30','-pix_fmt','yuv420p','-f','rawvideo','pipe:1'],True)
+        await asyncio.sleep(.3)
+        await asyncio.wait_for(self.service.stop(proc,drain=True),8)
+        self.assertIsNotNone(proc.returncode)
+
     async def test_paused_purge_does_not_export(self):
         service=self.service
         (service.DATA/'purge-request.json').write_text('{}')

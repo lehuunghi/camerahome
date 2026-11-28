@@ -62,14 +62,18 @@ async def spawn(args, pipe=False):
                                                 stderr=asyncio.subprocess.DEVNULL)
 
 
-async def stop(proc):
+async def stop(proc, drain=False):
+    # A stopped raw-video producer can still have a full stdout pipe. Drain it
+    # while waiting, otherwise asyncio's process transport never finishes closing.
     if proc.returncode is None:
-        proc.terminate()
-        try:
-            await asyncio.wait_for(proc.wait(), 5)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
+        with contextlib.suppress(ProcessLookupError): proc.terminate()
+    try:
+        await asyncio.wait_for(proc.communicate() if drain else proc.wait(),5)
+    except asyncio.TimeoutError:
+        if proc.returncode is None:
+            with contextlib.suppress(ProcessLookupError): proc.kill()
+        with contextlib.suppress(asyncio.TimeoutError):
+            await asyncio.wait_for(proc.communicate() if drain else proc.wait(),3)
 
 
 def hit(camera, kind, score):
@@ -91,7 +95,7 @@ async def motion(camera):
             if triggered and selected_mode(config()['cameras'][camera])[0] and can_record():
                 hit(camera,'motion',score)
     finally:
-        await stop(proc)
+        await stop(proc,drain=True)
 
 
 class CryModel:
@@ -133,7 +137,7 @@ async def crying(camera):
                 hit(camera, 'crying', score)
                 consecutive = 0
     finally:
-        await stop(proc)
+        await stop(proc,drain=True)
 
 
 async def export_segments(camera, rows):
@@ -402,6 +406,7 @@ async def stats(request):
     with INDEX.connect() as db:
         queue=[dict(r) for r in db.execute('SELECT source,state,count(*) AS count FROM copies GROUP BY source,state')]
     return web.json_response({'engine':'camerahome-native','cry_model_ready':MODEL_OK,'queue':queue,
+        'sensors':[{'camera':key[0],'kind':key[1],'running':not task.done()} for key,task in TASKS.items()],
         'cameras':{k:{'camera_fps':3 if time.time()-v.get('last_frame',0)<10 else 0,
                      **{x:y for x,y in v.items() if x!='frame'}} for k,v in STATUS.items()}})
 
